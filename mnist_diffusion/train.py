@@ -64,7 +64,7 @@ class EMA:
             param.data.copy_(shadow_params[name].data)
 
 
-if __name__ == "__main__":
+def train():
     # Prepare data
     transforms = Compose([Resize(28), ToTensor(), Normalize([0.5], [0.5])])
     training_data = datasets.MNIST(
@@ -174,3 +174,35 @@ if __name__ == "__main__":
             torch.save(checkpoint, model_name)
             print(f"--- Saved checkpoint at epoch {epoch} ---")
     writer.close()
+
+
+def sample():
+    unet = UNet(
+        input_channel=1,
+        channels=channels,
+        max_timesteps=1000,
+        time_embed_dim=time_embed_dim,
+    )
+    config = DDPMConfig(timesteps=max_timesteps, device=device)
+    ddpm_model = DDPM(unet, config)
+
+    if model_name in os.listdir(os.getcwd()):
+        print("Loading Checkpoints")
+        checkpoint_path = model_name
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+
+        unet.load_state_dict(checkpoint["model_state_dict"])
+
+    unet.eval()
+    unet.compile()
+    with torch.no_grad():
+        samples = ddpm_model.sample((8, 1, 28, 28))
+        samples = (samples + 1) / 2
+
+    grid_images = make_grid(samples, 4)
+    plt.imshow(grid_images)
+    plt.show()
+
+
+if __name__ == "__main__":
+    sample()
