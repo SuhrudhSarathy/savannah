@@ -3,10 +3,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from torch.optim import AdamW
 from model import NanoDOT, NanoDOTConfig
-import tiktoken
 from tqdm import tqdm
 
-import time
 
 from torch.utils.tensorboard import SummaryWriter
 from transformers import get_cosine_schedule_with_warmup

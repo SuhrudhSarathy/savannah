@@ -26,40 +26,48 @@ class ResidualLayer(nn.Module):
         # (B, c, h, w) -> (B, c, h, w)
         self.conv_block1 = nn.Sequential(
             nn.SiLU(),
-            nn.BatchNorm2d(channels),
             nn.Conv2d(channels, channels, kernel_size=3, padding=1),
         )
 
         # (B, c, h, w) -> (B, c, h, w)
         self.conv_block2 = nn.Sequential(
             nn.SiLU(),
-            nn.BatchNorm2d(channels),
             nn.Conv2d(channels, channels, kernel_size=3, padding=1),
         )
 
-        # (B, time_embed) -> (B, channels)
-        self.time_embed_mlp = MLP(time_embed_dim, channels)
+        self.gn1 = nn.GroupNorm(num_groups=4, num_channels=channels, affine=False)
+        self.gn2 = nn.GroupNorm(num_groups=4, num_channels=channels, affine=False)
+
+        # (B, time_embed) -> (B, 4*channels)
+        self.time_embed_mlp = MLP(time_embed_dim, 4 * channels)
 
     def forward(
         self,
         x: torch.tensor,
         t: torch.tensor,
     ) -> torch.tensor:
+        # Time Projection
+        # (B, time_embed) -> (B, 4 * c)
+        time_proj = self.time_embed_mlp(t)
+        # Split the (B, 4*c) -> 4 * (B, c)
+        gamma1, beta1, gamma2, beta2 = torch.chunk(time_proj, chunks=4, dim=1)
+
+        gamma1 = repeat(gamma1, "b c -> b c h w", h=1, w=1)
+        beta1 = repeat(beta1, "b c -> b c h w", h=1, w=1)
+        gamma2 = repeat(gamma2, "b c -> b c h w", h=1, w=1)
+        beta2 = repeat(beta2, "b c -> b c h w", h=1, w=1)
+
         # (b, c, h, w) -> (b, c, h, w)
-        x_conv = self.conv_block1(x)
+        x_norm1 = self.gn1(x)
+        x_cond1 = x_norm1 * gamma1 + beta1
+        x_conv1 = self.conv_block1(x_cond1)
 
-        # (b, time_embed) -> (B, c, 1, 1)
-        x_time = self.time_embed_mlp(t)
-        x_time = repeat(x_time, "b c -> b c h w", h=1, w=1)
-
-        # Concatenate
-        x_conv = x_conv + x_time
-
-        # (b, c, h, w) -> (b, c, h, w)
-        x_conv = self.conv_block2(x_conv)
+        x_norm2 = self.gn2(x_conv1)
+        x_cond2 = x_norm2 * gamma2 + beta2
+        x_conv2 = self.conv_block1(x_cond2)
 
         # Add Residual connection
-        return x + x_conv
+        return x + x_conv2
 
 
 class Encoder(nn.Module):
@@ -159,12 +167,42 @@ class Decoder(nn.Module):
 class TimeEmbedding(nn.Module):
     def __init__(self, max_timesteps: int, embedding_dim: int):
         super().__init__()
-        # Placeholder class to later implement better position encoding
-        self.pos_encoder = nn.Embedding(max_timesteps, embedding_dim)
+        self.embedding_dim = embedding_dim
+        i = torch.arange(0, embedding_dim, 2).float()  # Only taking even indices
+        div_term = torch.exp(torch.log(torch.tensor(10000.0)) * (i / embedding_dim))
+        self.register_buffer("div_term", div_term)
 
-    def forward(self, t: torch.tensor) -> torch.tensor:
-        # (B, 1) -> (B, embedding_dim)
-        return self.pos_encoder(t)
+    def forward(self, t: torch.Tensor) -> torch.Tensor:
+        # t has shape (B, 1) or just (B,) where B is the batch size.
+        # We ensure it's (B, 1) for broadcasting
+        if t.dim() == 1:
+            t = t.unsqueeze(-1)  # -> (B, 1)
+
+        # 2. Compute the position argument (pos / div_term)
+        # pos is the time 't'. Shape: (B, 1).
+        # div_term has shape: (embedding_dim // 2,).
+        # result_shape: (B, embedding_dim // 2)
+        pos_arg = t / self.div_term
+
+        # 3. Apply sin to even indices and cos to odd indices
+
+        # Initialize the output tensor. Shape: (B, embedding_dim)
+        output = torch.zeros(t.shape[0], self.embedding_dim, device=t.device)
+
+        # Even indices: Use sin
+        # output[:, 0::2] gets all even indices of the last dimension
+        output[:, 0::2] = torch.sin(pos_arg)
+
+        # Odd indices: Use cos
+        # output[:, 1::2] gets all odd indices of the last dimension
+        # Note: We only use sin if i=0 and cos if i=1 in the original paper,
+        # but modern implementations often pair them this way for stability.
+        # In the original paper's formula, 2i uses sin and 2i+1 uses cos.
+        # The pos_arg already captures the 2i/d_model relationship because we stepped by 2 for i.
+        output[:, 1::2] = torch.cos(pos_arg)
+
+        # The final output shape is (B, embedding_dim)
+        return output
 
 
 class UNet(nn.Module):
@@ -198,7 +236,7 @@ class UNet(nn.Module):
             )
             decoder = Decoder(
                 num_residual_layers=2,
-                in_channels=channels[i + 1],
+                in_channels=2 * channels[i + 1],
                 time_embed_dim=time_embed_dim,
                 out_channels=channels[i],
             )
@@ -234,9 +272,17 @@ class UNet(nn.Module):
 
         for i, decoder in enumerate(self.decoder_module):
             x_res = residuals.pop()
-            x = x + x_res
+            x = torch.cat([x, x_res], dim=1)
             x = decoder(x, x_time)
 
         x = self.final_conv(x)
 
         return x
+
+
+if __name__ == "__main__":
+    model = UNet(1, [16, 32, 64], 1000, 512)
+    x = torch.randn((8, 1, 28, 28))
+    t = torch.randint(0, 1000, (8,))
+    out = model(x, t)
+    print(out.shape)
