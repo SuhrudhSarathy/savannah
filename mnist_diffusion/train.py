@@ -1,19 +1,19 @@
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
-from torchvision import datasets
-from torchvision.transforms import ToTensor, Resize, Normalize, Compose
-from torch.optim import AdamW
-from transformers import get_cosine_schedule_with_warmup
-from torch.utils.tensorboard import SummaryWriter
-from torchvision.utils import make_grid
-
-from tqdm import tqdm
+import copy
 import os
 
-from unet import UNet
+import matplotlib.pyplot as plt
+import torch
+import torch.nn as nn
 from ddpm_model import DDPM, DDPMConfig
-import copy
+from torch.optim import AdamW
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+from torchvision import datasets
+from torchvision.transforms import Compose, Normalize, Resize, ToTensor
+from torchvision.utils import make_grid
+from tqdm import tqdm
+from transformers import get_cosine_schedule_with_warmup
+from unet import UNet
 
 dtype = torch.float32
 device = torch.device("cpu")
@@ -194,14 +194,15 @@ def sample():
         unet.load_state_dict(checkpoint["model_state_dict"])
 
     unet.eval()
-    unet.compile()
     with torch.no_grad():
-        samples = ddpm_model.sample((8, 1, 28, 28))
+        samples = ddpm_model.sample((4, 1, 28, 28))
+        samples = torch.clamp(samples, -1, 1)
         samples = (samples + 1) / 2
 
     grid_images = make_grid(samples, 4)
-    plt.imshow(grid_images)
-    plt.show()
+
+    from torchvision.utils import save_image
+    save_image(grid_images, "grid_image.png")
 
 
 if __name__ == "__main__":

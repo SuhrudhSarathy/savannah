@@ -1,7 +1,8 @@
+from dataclasses import dataclass
+
 import torch
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 from unet import UNet
-from dataclasses import dataclass
 
 
 @dataclass
