@@ -3,3 +3,6 @@
 .DS_Store
 runs/
 data/
+wandb/
+checkpoints/
+videos/

@@ -26,6 +26,13 @@ class ACTConfig:
     img_shape: tuple[int, int] = (480, 640)
     vision_backbone_out_channels: int = 728
 
+    @classmethod
+    def from_dict(cls, data_dict):
+        # Filter out keys that aren't in the dataclass to avoid errors
+        return cls(
+            **{k: v for k, v in data_dict.items() if k in cls.__dataclass_fields__}
+        )
+
 
 class SelfAttention(nn.Module):
     def __init__(self, config: ACTConfig = ACTConfig()):
@@ -333,28 +340,54 @@ class ACT_CVAE_Encoder(nn.Module):
 
         # Get the Mean and Std Dev for reparametrization
         z_mean_std = self.z_variable_downsample(cls_feature)
-        mean, std = torch.split(z_mean_std, 32, dim=-1)
+        mean, logvar = torch.split(z_mean_std, 32, dim=-1)
 
-        normal = torch.randn_like(mean)
+        return mean, logvar
 
-        return mean + normal * std
+
+# class ResNetBackbone(nn.Module):
+#     def __init__(self, out_channels: int):
+#         super().__init__()
+#         resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+
+#         self.backbone = nn.Sequential(*list(resnet.children())[:-2])
+#         self.proj = nn.Identity()
+
+#         if out_channels != 512:
+#             self.proj = nn.Conv2d(512, out_channels, kernel_size=3, padding=1)
+
+#     def forward(self, x):
+#         features = self.backbone(x)
+#         out = self.proj(features)
+#         return out
 
 
 class ResNetBackbone(nn.Module):
     def __init__(self, out_channels: int):
         super().__init__()
+        # Load pre-trained weights
         resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
 
-        self.backbone = nn.Sequential(*list(resnet.children())[:-2])
-        self.proj = nn.Identity()
+        # 1. Replace the initial 7x7 conv (stride 2) with a 3x3 conv (stride 1)
+        # This prevents the initial massive loss of resolution
+        resnet.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
 
-        if out_channels != 512:
-            self.proj = nn.Conv2d(512, out_channels, kernel_size=3, padding=1)
+        # 2. Remove the MaxPool layer
+        # This keeps the feature map larger for longer
+        resnet.maxpool = nn.Identity()
+
+        # 3. Keep the main layers (layer1 through layer4)
+        self.backbone = nn.Sequential(*list(resnet.children())[:-2])
+
+        # 4. Final projection to your Transformer's embed_dim
+        self.proj = nn.Conv2d(512, out_channels, kernel_size=1)
 
     def forward(self, x):
+        # x: (B, 3, 96, 96)
         features = self.backbone(x)
-        out = self.proj(features)
-        return out
+        # With the fix: features will be (B, 512, 12, 12)
+        # (Standard ResNet would have given you 3x3)
+        return self.proj(features)
 
 
 class VisionBackbone(nn.Module):
@@ -469,15 +502,19 @@ class ACTPolicy(nn.Module):
         x_image: torch.Tensor,
         x_state: torch.Tensor,
         x_target: torch.Tensor | None,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         if x_target is not None:
-            x_cls = self.cvae_encoder(x_state, x_target)
+            mu, logvar = self.cvae_encoder(x_state, x_target)
+            std = torch.exp(0.5 * logvar)
+
+            x_cls = mu + torch.randn_like(mu) * std
         else:
-            x_cls = torch.zeros((x_state.shape[0], 1, 32))
+            mu, std = None, None
+            x_cls = torch.zeros((x_state.shape[0], 1, 32)).to(x_state.device)
 
         x_out = self.cvae_decoder(x_image, x_state, x_cls)
 
-        return x_out
+        return x_out, [mu, std]
 
 
 if __name__ == "__main__":
@@ -496,5 +533,5 @@ if __name__ == "__main__":
     act = ACTPolicy(config).to(device)
     print(f"Num of params: {act._num_params()}M")
 
-    x_out = act(x_image, x_state, x_target)
+    x_out, _ = act(x_image, x_state, x_target)
     print(x_out.shape)
