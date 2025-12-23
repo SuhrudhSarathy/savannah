@@ -27,12 +27,11 @@ print("Currently using device: ", device)
 
 @dataclass
 class ACTTrainingConfig:
-    lr: float = 1e-5
-    beta: float = 0.01
-    batch_size: int = 8
+    lr: float = 5e-5
+    beta: float = 100
+    batch_size: int = 64
     warmup_steps: int = 1000
-    training_steps: int = 100_000
-    val_every: int = 100
+    training_steps: int = 100_000 
 
 
 def get_scheduler(optimizer, num_warmup_steps, num_training_steps):
@@ -91,12 +90,12 @@ def train(config: ACTTrainingConfig = ACTTrainingConfig()):
     best_val_loss = float("inf")
 
     os.makedirs("checkpoints", exist_ok=True)
-
+    
     while global_step < config.training_steps:
         print("----------------- Running Training Run -------------")
         act.train()
 
-        for batch in train_dataloader:
+        for batch in tqdm(train_dataloader):
             # 1. Data Preparation
             x_image = batch["observation.image"].to(device)
             x_state = (batch["observation.state"].to(device) - 256.0) / 512.0
@@ -127,57 +126,57 @@ def train(config: ACTTrainingConfig = ACTTrainingConfig()):
                 }
             )
 
-            # 6. Periodic Validation
-            if (global_step + 1) % config.val_every == 0:
-                print("----------- Validating Learning -------------")
-
-                act.eval()
-                val_losses = []
-
-                with torch.no_grad():
-                    # Validate on a few batches to save time
-                    for _, v_batch in enumerate(val_dataloader):
-                        v_image = v_batch["observation.image"].to(device)
-                        v_state = (
-                            v_batch["observation.state"].to(device) - 256.0
-                        ) / 512.0
-                        v_target = (v_batch["action"].to(device) - 256.0) / 512.0
-
-                        v_out, [v_mu, v_log_var] = act(v_image, v_state, v_target)
-                        v_recon = F.l1_loss(v_out, v_target)
-                        v_kl = kl_divergence_loss(v_mu, v_log_var)
-                        val_losses.append(v_recon.item() + config.beta * v_kl.item())
-
-                avg_val_loss = sum(val_losses) / len(val_losses)
-                wandb.log({"val/total_loss": avg_val_loss, "global_step": global_step})
-
-                # --- CHECKPOINTING LOGIC ---
-                checkpoint = {
-                    "model_state_dict": act.state_dict(),
-                    "optimizer_state_dict": optimiser.state_dict(),
-                    "global_step": global_step,
-                    "val_loss": avg_val_loss,
-                    "config": act_config,
-                }
-
-                # Save 'latest' locally
-                latest_path = "checkpoints/latest.ckpt"
-                torch.save(checkpoint, latest_path)
-
-                # If this is the best model so far, save it and upload to WandB
-                if avg_val_loss < best_val_loss:
-                    best_val_loss = avg_val_loss
-                    best_path = "checkpoints/best_model.ckpt"
-                    torch.save(checkpoint, best_path)
-
-                    print(
-                        f"New best model saved at step {global_step} (Loss: {avg_val_loss:.4f})"
-                    )
-                evaluate_and_log(act, device, idx=global_step)
-
             global_step += 1
-            if global_step >= config.training_steps:
-                break
+
+        # Validation
+        print("----------- Validating Learning -------------")
+        act.eval()
+        val_losses = []
+
+        with torch.no_grad():
+            # Validate on a few batches to save time
+            for _, v_batch in enumerate(val_dataloader):
+                v_image = v_batch["observation.image"].to(device)
+                v_state = (
+                    v_batch["observation.state"].to(device) - 256.0
+                ) / 512.0
+                v_target = (v_batch["action"].to(device) - 256.0) / 512.0
+
+                v_out, [v_mu, v_log_var] = act(v_image, v_state, v_target)
+                v_recon = F.l1_loss(v_out, v_target)
+                v_kl = kl_divergence_loss(v_mu, v_log_var)
+                val_losses.append(v_recon.item() + config.beta * v_kl.item())
+
+        avg_val_loss = sum(val_losses) / len(val_losses)
+        wandb.log({"val/total_loss": avg_val_loss, "global_step": global_step})
+
+        # --- CHECKPOINTING LOGIC ---
+        checkpoint = {
+            "model_state_dict": act.state_dict(),
+            "optimizer_state_dict": optimiser.state_dict(),
+            "global_step": global_step,
+            "val_loss": avg_val_loss,
+            "config": act_config,
+        }
+
+        # Save 'latest' locally
+        latest_path = "checkpoints/latest.ckpt"
+        torch.save(checkpoint, latest_path)
+
+        # If this is the best model so far, save it
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            best_path = "checkpoints/best_model.ckpt"
+            torch.save(checkpoint, best_path)
+
+            print(
+                f"New best model saved at step {global_step} (Loss: {avg_val_loss:.4f})"
+            )
+        
+        evaluate_and_log(act, device, idx=global_step)
+
+        if global_step >= config.training_steps:
+            break
 
     wandb.finish()
 
@@ -210,5 +209,4 @@ def test():
 
 if __name__ == "__main__":
     train_config = ACTTrainingConfig()
-    train_config.batch_size = 8
     train(train_config)
