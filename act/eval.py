@@ -9,6 +9,7 @@ import gym_pusht
 import wandb
 import numpy as np
 
+from tqdm import tqdm
 
 dtype = torch.float32
 device = torch.device("cpu")
@@ -134,7 +135,7 @@ def evaluate_and_log(model, device, idx, num_episodes=3):
     model.train()  # Switch back to training mode!
 
 
-def eval_one_epoch():
+def eval_epochs(num_epochs: int = 10):
     # 1. Initialize Env (pixels_agent_pos gives you the image AND (x,y) state)
     base_env = gym.make(
         "gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode="rgb_array"
@@ -150,57 +151,61 @@ def eval_one_epoch():
 
     model = get_model().to(device).eval()
 
-    obs, info = env.reset()
-    done = False
-
     temporal_ensembler = ACTTemporalEnsembler(0.001, chunk_size=10)
 
-    while not done:
-        # 2. Extract and Preprocess Image (96x96x3 -> 1x3x96x96)
-        # We permute to get Channels-First and normalize pixels to [0, 1]
-        img_tensor = (
-            torch.from_numpy(obs["pixels"])
-            .permute(2, 0, 1)
-            .float()
-            .divide(255.0)
-            .unsqueeze(0)
-            .to(device)
-        )
+    for _ in tqdm(range(num_epochs)):
+        obs, info = env.reset()
+        done = False
 
-        raw_state = obs["agent_pos"]
-        norm_state = normalize_action(raw_state)
-        state_tensor = (
-            torch.from_numpy(norm_state).float().unsqueeze(0).unsqueeze(0).to(device)
-        )
-
-        # 4. Inference
-        with torch.no_grad():
-            action_chunk, _ = model(
-                img_tensor, state_tensor, None
+        while not done:
+            # 2. Extract and Preprocess Image (96x96x3 -> 1x3x96x96)
+            # We permute to get Channels-First and normalize pixels to [0, 1]
+            img_tensor = (
+                torch.from_numpy(obs["pixels"])
+                .permute(2, 0, 1)
+                .float()
+                .divide(255.0)
+                .unsqueeze(0)
+                .to(device)
             )
 
-        ensemble_action = temporal_ensembler.update(action_chunk)
-        # ensemble_action = action_chunk[0, 0, :]
-
-        # 5. Process the first action in the chunk
-        pred_action_norm = (
-            ensemble_action.cpu()
-            .numpy()
-            .reshape(
-                -1,
+            raw_state = obs["agent_pos"]
+            norm_state = normalize_action(raw_state)
+            state_tensor = (
+                torch.from_numpy(norm_state)
+                .float()
+                .unsqueeze(0)
+                .unsqueeze(0)
+                .to(device)
             )
-        )
 
-        # 6. Unnormalize back to [0, 512] for the simulator
-        action_to_apply = unnormalize_action(pred_action_norm)
+            # 4. Inference
+            with torch.no_grad():
+                action_chunk, _ = model(img_tensor, state_tensor, None)
 
-        # 7. Step the environment
-        obs, reward, terminated, truncated, info = env.step(action_to_apply)
-        done = terminated or truncated
+            ensemble_action = temporal_ensembler.update(action_chunk)
+            # ensemble_action = action_chunk[0, 0, :]
+
+            # 5. Process the first action in the chunk
+            pred_action_norm = (
+                ensemble_action.cpu()
+                .numpy()
+                .reshape(
+                    -1,
+                )
+            )
+
+            # 6. Unnormalize back to [0, 512] for the simulator
+            action_to_apply = unnormalize_action(pred_action_norm)
+
+            # 7. Step the environment
+            obs, reward, terminated, truncated, info = env.step(action_to_apply)
+            done = terminated or truncated
+
+        print("Episode Finished. Success:", info.get("is_success", False))
 
     env.close()
 
-    print("Episode Finished. Success:", info.get("is_success", False))
 
 if __name__ == "__main__":
-    eval_one_epoch()
+    eval_epochs()

@@ -314,7 +314,6 @@ class DiT(nn.Module):
 
 
 if __name__ == "__main__":
-
     device = torch.device("cpu")
     if torch.cuda.is_available():
         device = torch.device("cuda")

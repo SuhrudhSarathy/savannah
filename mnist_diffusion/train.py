@@ -202,6 +202,7 @@ def sample():
     grid_images = make_grid(samples, 4)
 
     from torchvision.utils import save_image
+
     save_image(grid_images, "grid_image.png")
 
 

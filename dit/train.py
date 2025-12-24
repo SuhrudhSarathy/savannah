@@ -177,7 +177,9 @@ def sample(args):
     grid_images = make_grid(samples, 4)
 
     from torchvision.utils import save_image
+
     save_image(grid_images, "grid_image.png")
+
 
 def sample_with_class(args):
     num_samples = args.num_samples
@@ -195,28 +197,42 @@ def sample_with_class(args):
     model.eval()
     with torch.no_grad():
         classes = torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]).reshape(-1, 1)
-        samples = ddpm_model.sample_with_class((num_samples, 1, 28, 28), class_tensor=classes)
+        samples = ddpm_model.sample_with_class(
+            (num_samples, 1, 28, 28), class_tensor=classes
+        )
         samples = torch.clamp(samples, -1, 1)
         samples = (samples + 1) / 2
 
     grid_images = make_grid(samples, 4)
 
     from torchvision.utils import save_image
+
     save_image(grid_images, "grid_image_with_class.png")
 
+
 def main():
-    parser = argparse.ArgumentParser(prog="DiT-Mnist", description="Train or Sample from DiT")
-    subparsers = parser.add_subparsers(dest="mode", help="Execution mode", required=True)
+    parser = argparse.ArgumentParser(
+        prog="DiT-Mnist", description="Train or Sample from DiT"
+    )
+    subparsers = parser.add_subparsers(
+        dest="mode", help="Execution mode", required=True
+    )
 
     # --- Train Subparser ---
     train_parser = subparsers.add_parser("train", help="Train the model")
-    train_parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
+    train_parser.add_argument(
+        "--epochs", type=int, default=10, help="Number of training epochs"
+    )
     train_parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     train_parser.add_argument("--batch_size", type=int, default=64)
 
     # --- Sample Subparser ---
-    sample_parser = subparsers.add_parser("sample", help="Generate samples from a checkpoint")
-    sample_parser.add_argument("--num_samples", type=int, default=16, help="Number of images to generate")
+    sample_parser = subparsers.add_parser(
+        "sample", help="Generate samples from a checkpoint"
+    )
+    sample_parser.add_argument(
+        "--num_samples", type=int, default=16, help="Number of images to generate"
+    )
 
     args = parser.parse_args()
 
@@ -225,6 +241,7 @@ def main():
         train(args)
     elif args.mode == "sample":
         sample_with_class(args)
+
 
 if __name__ == "__main__":
     main()

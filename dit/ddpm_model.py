@@ -27,7 +27,9 @@ class DDPM:
 
         self.model.to(device=self.config.device)
 
-    def forward(self, x: torch.tensor, y: torch.tensor, noise: torch.tensor) -> torch.tensor:
+    def forward(
+        self, x: torch.tensor, y: torch.tensor, noise: torch.tensor
+    ) -> torch.tensor:
         # X (B, C, H, W), Noise (B, C, H, W), t (B, 1)
         t = torch.randint(0, self.config.timesteps, size=(x.shape[0], 1)).to(
             self.config.device
@@ -59,7 +61,9 @@ class DDPM:
         return x_t
 
     @torch.no_grad
-    def sample_with_class(self, img_size: tuple[int, int, int, int], class_tensor: torch.tensor):
+    def sample_with_class(
+        self, img_size: tuple[int, int, int, int], class_tensor: torch.tensor
+    ):
         # This is unconditional sampling. So we just complete the sampling steps directly
         B, _, H, W = img_size
         x_t = torch.randn(img_size).to(self.config.device)

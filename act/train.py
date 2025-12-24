@@ -31,7 +31,7 @@ class ACTTrainingConfig:
     beta: float = 100
     batch_size: int = 64
     warmup_steps: int = 1000
-    training_steps: int = 100_000 
+    training_steps: int = 100_000
 
 
 def get_scheduler(optimizer, num_warmup_steps, num_training_steps):
@@ -90,7 +90,7 @@ def train(config: ACTTrainingConfig = ACTTrainingConfig()):
     best_val_loss = float("inf")
 
     os.makedirs("checkpoints", exist_ok=True)
-    
+
     while global_step < config.training_steps:
         print("----------------- Running Training Run -------------")
         act.train()
@@ -122,7 +122,7 @@ def train(config: ACTTrainingConfig = ACTTrainingConfig()):
                     "train/total_loss": total_loss.item(),
                     "train/recon_loss": recon_loss.item(),
                     "train/kl_loss": kl_loss.item(),
-                    "train/lr": optimiser.param_groups[0]['lr'],
+                    "train/lr": optimiser.param_groups[0]["lr"],
                     "global_step": global_step,
                 }
             )
@@ -137,9 +137,7 @@ def train(config: ACTTrainingConfig = ACTTrainingConfig()):
             # Validate on a few batches to save time
             for _, v_batch in enumerate(val_dataloader):
                 v_image = v_batch["observation.image"].to(device)
-                v_state = (
-                    v_batch["observation.state"].to(device) - 256.0
-                ) / 512.0
+                v_state = (v_batch["observation.state"].to(device) - 256.0) / 512.0
                 v_target = (v_batch["action"].to(device) - 256.0) / 512.0
 
                 v_out, [v_mu, v_log_var] = act(v_image, v_state, v_target)
@@ -172,7 +170,7 @@ def train(config: ACTTrainingConfig = ACTTrainingConfig()):
             print(
                 f"New best model saved at step {global_step} (Loss: {avg_val_loss:.4f})"
             )
-        
+
         evaluate_and_log(act, device, idx=global_step)
 
         if global_step >= config.training_steps:

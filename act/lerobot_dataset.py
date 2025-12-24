@@ -53,6 +53,7 @@ def create_dataset(
 
     return train_loader, val_loader
 
+
 if __name__ == "__main__":
     train, _ = create_dataset()
     batch = next(iter(train))
