@@ -40,12 +40,12 @@ def get_model() -> ACTPolicy:
 
 def normalize_action(action, center=256, scale=512):
     """Normalizes raw [0, 512] coordinates to [-1, 1]"""
-    return (action - center) / (scale / 2)
+    return (action - center) / scale
 
 
 def unnormalize_action(action, center=256, scale=512):
     """Unnormalizes model output [-1, 1] back to [0, 512]"""
-    return (action * (scale / 2)) + center
+    return (action * scale) + center
 
 
 def evaluate_and_log(model, device, idx, num_episodes=3):
@@ -59,7 +59,7 @@ def evaluate_and_log(model, device, idx, num_episodes=3):
     success_count = 0
     rewards = []
 
-    temporal_ensembler = ACTTemporalEnsembler(0.001, chunk_size=50)
+    temporal_ensembler = ACTTemporalEnsembler(0.001, chunk_size=10)
 
     for i in range(num_episodes):
         obs, info = env.reset()
@@ -134,7 +134,7 @@ def evaluate_and_log(model, device, idx, num_episodes=3):
     model.train()  # Switch back to training mode!
 
 
-if __name__ == "__main__":
+def eval_one_epoch():
     # 1. Initialize Env (pixels_agent_pos gives you the image AND (x,y) state)
     base_env = gym.make(
         "gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode="rgb_array"
@@ -153,7 +153,7 @@ if __name__ == "__main__":
     obs, info = env.reset()
     done = False
 
-    temporal_ensembler = ACTTemporalEnsembler(0.001, chunk_size=50)
+    temporal_ensembler = ACTTemporalEnsembler(0.001, chunk_size=10)
 
     while not done:
         # 2. Extract and Preprocess Image (96x96x3 -> 1x3x96x96)
@@ -173,15 +173,14 @@ if __name__ == "__main__":
             torch.from_numpy(norm_state).float().unsqueeze(0).unsqueeze(0).to(device)
         )
 
-        print("State: ", state_tensor.cpu().numpy())
-
         # 4. Inference
         with torch.no_grad():
             action_chunk, _ = model(
-                torch.zeros_like(img_tensor), torch.zeros_like(state_tensor), None
+                img_tensor, state_tensor, None
             )
 
         ensemble_action = temporal_ensembler.update(action_chunk)
+        # ensemble_action = action_chunk[0, 0, :]
 
         # 5. Process the first action in the chunk
         pred_action_norm = (
@@ -194,9 +193,6 @@ if __name__ == "__main__":
 
         # 6. Unnormalize back to [0, 512] for the simulator
         action_to_apply = unnormalize_action(pred_action_norm)
-        print(
-            "Predicted Raw value", pred_action_norm, "Applied Action: ", action_to_apply
-        )
 
         # 7. Step the environment
         obs, reward, terminated, truncated, info = env.step(action_to_apply)
@@ -205,3 +201,6 @@ if __name__ == "__main__":
     env.close()
 
     print("Episode Finished. Success:", info.get("is_success", False))
+
+if __name__ == "__main__":
+    eval_one_epoch()

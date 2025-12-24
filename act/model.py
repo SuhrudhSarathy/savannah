@@ -14,7 +14,7 @@ class ACTConfig:
     encoder_layers: int = 4
     decoder_layers: int = 7
     num_attn_heads: int = 8
-    chunk_size: int = 100
+    chunk_size: int = 10
     dropout: float = 0.1
     embed_dim: int = 512
     feedforward_dim: int = 3200
@@ -42,6 +42,7 @@ class SelfAttention(nn.Module):
         self.n_heads = self.config.num_attn_heads
 
         self.attn_projection = nn.Linear(self.embed_dim, 3 * self.embed_dim)
+        self.reproj = nn.Linear(self.embed_dim, self.embed_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x (B, T, n_embed)
@@ -77,6 +78,7 @@ class SelfAttention(nn.Module):
         # Attention
         # (b, nh, t, hs) @ (b, nh, hs, t) -> (b, nh, t, t)
         attn = q @ k_T / math.sqrt(k.shape[-1])
+        attn = F.softmax(attn, dim=-1)
         # (b, nh, t, t) @ (b, nh, t, hs) -> (b, nh, t, hs)
         attn = attn @ v
 
@@ -87,7 +89,8 @@ class SelfAttention(nn.Module):
             nh=self.n_heads,
             hs=self.embed_dim // self.n_heads,
         )
-        attn = F.softmax(attn, dim=-1)
+
+        attn = self.reproj(attn)
 
         return attn
 
@@ -101,6 +104,8 @@ class CrossAttention(nn.Module):
 
         self.q_projection = nn.Linear(self.embed_dim, self.embed_dim)
         self.kv_projection = nn.Linear(self.embed_dim, 2 * self.embed_dim)
+
+        self.reproj = nn.Linear(self.embed_dim, self.embed_dim)
 
     def forward(self, x: torch.Tensor, kv: torch.Tensor) -> torch.Tensor:
         # x (B, T, n_embed), kv (B, T, n_embed)
@@ -137,6 +142,8 @@ class CrossAttention(nn.Module):
         # Attention
         # (b, nh, t, hs) @ (b, nh, hs, t) -> (b, nh, t, t)
         attn = q @ k_T / math.sqrt(k.shape[-1])
+        attn = F.softmax(attn, dim=-1)
+
         # (b, nh, t, t) @ (b, nh, t, hs) -> (b, nh, t, hs)
         attn = attn @ v
 
@@ -147,7 +154,8 @@ class CrossAttention(nn.Module):
             nh=self.n_heads,
             hs=self.embed_dim // self.n_heads,
         )
-        attn = F.softmax(attn, dim=-1)
+
+        attn = self.reproj(attn)
 
         return attn
 
@@ -293,6 +301,41 @@ class SinusoidalPositionalEncoding(nn.Module):
         x = x + self.pe[:, : x.size(1), :]
         return x
 
+class SinusoidalPositionalEncoding2D(nn.Module):
+    def __init__(self, channels: int):
+        """
+        Args:
+            channels: The total embedding dimension (must be divisible by 4).
+        """
+        super().__init__()
+        self.channels = channels
+        # Half for height (y), half for width (x)
+        self.dim = channels // 2 
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        batch, _, height, width = x.shape
+        
+        y_coords = torch.arange(height, device=x.device).unsqueeze(1).repeat(1, width)
+        x_coords = torch.arange(width, device=x.device).unsqueeze(0).repeat(height, 1)
+
+        div_term = torch.exp(
+            torch.arange(0, self.dim, 2, device=x.device) * -(math.log(10000.0) / self.dim)
+        )
+
+        pos_y = y_coords.unsqueeze(-1) * div_term # (H, W, dim/2)
+        pe_y = torch.zeros(height, width, self.dim, device=x.device)
+        pe_y[:, :, 0::2] = torch.sin(pos_y)
+        pe_y[:, :, 1::2] = torch.cos(pos_y)
+
+        pos_x = x_coords.unsqueeze(-1) * div_term # (H, W, dim/2)
+        pe_x = torch.zeros(height, width, self.dim, device=x.device)
+        pe_x[:, :, 0::2] = torch.sin(pos_x)
+        pe_x[:, :, 1::2] = torch.cos(pos_x)
+
+        pe = torch.cat([pe_y, pe_x], dim=-1).permute(2, 0, 1)
+        
+        # Add to input with broadcast across batch
+        return x + pe.unsqueeze(0)
 
 class ACT_CVAE_Encoder(nn.Module):
     def __init__(self, config: ACTConfig = ACTConfig()):
@@ -397,20 +440,22 @@ class VisionBackbone(nn.Module):
 
         self.resnet_back_bone = ResNetBackbone(self.config.vision_backbone_out_channels)
 
-        # FFN Layer
-        self.ffn_layer = nn.Linear(
-            self.config.vision_backbone_out_channels, self.config.embed_dim
+        self.spatial_proj = nn.Conv2d(
+            self.config.vision_backbone_out_channels, 
+            self.config.embed_dim, 
+            kernel_size=1
         )
 
-        # Position Embeddings
-        self.positional_embeddings = SinusoidalPositionalEncoding(self.config.embed_dim)
+        self.positional_embeddings = SinusoidalPositionalEncoding2D(self.config.embed_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         features = self.resnet_back_bone(x)
-        features_flatten = rearrange(features, "b c h w -> b (h w) c")
-        features_projected = self.ffn_layer(features_flatten)
 
-        features_out = self.positional_embeddings(features_projected)
+        features = self.spatial_proj(features)
+        
+        features = self.positional_embeddings(features)
+        
+        features_out = rearrange(features, "b c h w -> b (h w) c")
 
         return features_out
 

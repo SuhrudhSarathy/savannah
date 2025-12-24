@@ -12,7 +12,7 @@ def create_dataset(
     delta_timesteps = {
         "observation.image": [0.0],
         "observation.state": [0.0],
-        "action": [i / 10 for i in range(50)],
+        "action": [i / 10 for i in range(10)],
     }
 
     # Load the full dataset
@@ -52,3 +52,8 @@ def create_dataset(
     )
 
     return train_loader, val_loader
+
+if __name__ == "__main__":
+    train, _ = create_dataset()
+    batch = next(iter(train))
+    print(batch["observation.image"][0].max(), batch["observation.image"][0].min())

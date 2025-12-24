@@ -27,7 +27,7 @@ print("Currently using device: ", device)
 
 @dataclass
 class ACTTrainingConfig:
-    lr: float = 5e-5
+    lr: float = 3e-5
     beta: float = 100
     batch_size: int = 64
     warmup_steps: int = 1000
@@ -58,7 +58,7 @@ def train(config: ACTTrainingConfig = ACTTrainingConfig()):
 
     # Create the Model
     act_config = ACTConfig()
-    act_config.chunk_size = 50
+    act_config.chunk_size = 10
     act_config.state_dim = 2
 
     wandb.init(
@@ -105,6 +105,7 @@ def train(config: ACTTrainingConfig = ACTTrainingConfig()):
             x_out, [mu, log_var] = act(x_image, x_state, x_target)
 
             # 3. Loss Calculation
+            # per_action_loss = x_target - x_out
             recon_loss = F.l1_loss(x_out, x_target)
             kl_loss = kl_divergence_loss(mu, log_var)
             total_loss = recon_loss + config.beta * kl_loss
@@ -121,11 +122,10 @@ def train(config: ACTTrainingConfig = ACTTrainingConfig()):
                     "train/total_loss": total_loss.item(),
                     "train/recon_loss": recon_loss.item(),
                     "train/kl_loss": kl_loss.item(),
-                    "train/lr": f"{optimiser.param_groups[0]['lr']:.6f}",
+                    "train/lr": optimiser.param_groups[0]['lr'],
                     "global_step": global_step,
                 }
             )
-
             global_step += 1
 
         # Validation
