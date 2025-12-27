@@ -167,7 +167,7 @@ class Encoder(nn.Module):
 
         self.downsample = DownSample(in_channels, out_channels)
 
-    def forward(self, x: torch.tensor, c: torch.tensor) -> torch.tensor:
+    def forward(self, x: Tensor, c: Tensor) -> Tensor:
         # (B, in_c, t) -> (B, in_c, t)
         x_conv = x
         for layer in self.residuals:
@@ -195,7 +195,7 @@ class MidCoder(nn.Module):
             ]
         )
 
-    def forward(self, x: torch.tensor, c: torch.tensor):
+    def forward(self, x: Tensor, c: Tensor):
         for layer in self.residuals:
             x = layer(x, c)
 
@@ -227,9 +227,9 @@ class Decoder(nn.Module):
 
     def forward(
         self,
-        x: torch.tensor,
-        c: torch.tensor,
-    ) -> torch.tensor:
+        x: Tensor,
+        c: Tensor,
+    ) -> Tensor:
         x = self.upsample(x)
 
         for layer in self.residuals:
@@ -246,7 +246,7 @@ class TimeEmbedding(nn.Module):
         div_term = torch.exp(torch.log(torch.tensor(10000.0)) * (i / embedding_dim))
         self.register_buffer("div_term", div_term)
 
-    def forward(self, t: torch.Tensor) -> torch.Tensor:
+    def forward(self, t: Tensor) -> Tensor:
         # t has shape (B, 1) or just (B,) where B is the batch size.
         # We ensure it's (B, 1) for broadcasting
         if t.dim() == 1:
@@ -280,7 +280,7 @@ class TimeEmbedding(nn.Module):
 
 
 class SpatialSoftmax(nn.Module):
-    def __init__(self, height=3, width=3, channel=512):
+    def __init__(self, height: int = 3, width: int =3, channel: int =512):
         super().__init__()
         self.height = height
         self.width = width
