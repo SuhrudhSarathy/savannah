@@ -14,6 +14,20 @@ from unet import UNetConfig
 device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 print("Using Device: ", device)
 
+def get_model() -> DiffusionPolicy:
+    checkpoint_path = os.path.join(os.getcwd(), "checkpoints", "best_model.ckpt")
+    if os.path.exists(checkpoint_path):
+        checkpoint = torch.load(
+            checkpoint_path, map_location=device, weights_only=False
+        )
+        model = DiffusionPolicy(model_config=UNetConfig(), config=DiffusionPolicyConfig(device=device)).to(device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+
+        return model
+
+    else:
+        raise AssertionError("Checkpoint model does not exist")
+
 def normalize_state(state, center=256, scale=512):
     return (state - center) / scale
 
@@ -21,17 +35,24 @@ def unnormalize_action(action, center=256, scale=512):
     return (action * scale) + center
 
 def eval_epochs(num_episodes: int = 5, action_steps: int = 8, history_len: int = 2):
-    env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode="rgb_array")
+    base_env = gym.make("gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode="rgb_array")
+    env = RecordVideo(
+        base_env,
+        video_folder="./videos",
+        episode_trigger=lambda x: True,
+        name_prefix="diffusion-policy-eval",
+    )
+    model = DiffusionPolicy(model_config=UNetConfig(), config=DiffusionPolicyConfig(device=device)).to(device)
 
     # --- Model Loading ---
-    checkpoint_path = os.path.join(os.getcwd(), "checkpoints", "best_model.ckpt")
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    model = DiffusionPolicy(model_config=UNetConfig(), config=DiffusionPolicyConfig()).to(device)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    try:
+        model = get_model()
+    except AssertionError:
+        print("Could not load model")
 
     model.eval()
 
-    for ep in range(num_episodes):
+    for ep in tqdm(range(num_episodes)):
         obs, info = env.reset()
         done = False
 
