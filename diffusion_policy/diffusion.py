@@ -19,6 +19,8 @@ class DiffusionPolicyConfig:
 class DiffusionPolicy(nn.Module):
     def __init__(self, model_config: UNetConfig = UNetConfig(), config: DiffusionPolicyConfig = DiffusionPolicyConfig()):
         super().__init__()
+
+        self.model_config = model_config
         self.model = nn.ModuleDict({"unet_policy": UNet1D(model_config)})
         self.config = config
         self.ddim_scheduler = DDIMScheduler(

@@ -56,9 +56,3 @@ def create_dataset(
 
 if __name__ == "__main__":
     train, _ = create_dataset()
-    batch = next(iter(train))
-    print("--"*10)
-    print(batch["observation.image"].shape)
-    print(batch["observation.state"].shape)
-    print(batch["action"].shape)
-    print("--"*10)

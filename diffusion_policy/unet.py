@@ -370,7 +370,7 @@ class UNet1D(nn.Module):
             nn.Conv1d(
                 self.config.input_channels, channels[0], kernel_size=3, padding=1
             ),
-            nn.BatchNorm1d(channels[0]),
+            nn.GroupNorm(num_groups=8, num_channels=channels[0]),
             nn.Mish(),
         )
 

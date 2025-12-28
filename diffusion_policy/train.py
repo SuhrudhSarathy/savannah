@@ -15,6 +15,8 @@ import argparse
 import wandb
 import copy
 
+from eval import evaluate_and_log
+
 dtype = torch.float32
 device = torch.device("cpu")
 if torch.cuda.is_available():
@@ -67,7 +69,7 @@ def train(args):
     train_dataloader, val_dataloader = create_dataset()
 
     wandb.init(
-        project="act-training",
+        project="diffusion-policy-training",
         config={
             "learning_rate": args.lr,
             "architecture": "ACT",
@@ -83,7 +85,7 @@ def train(args):
 
     global_step = 0
     best_val_loss = float("inf")
-    ema = EMA(model, decay=0.99)
+    ema = EMA(model, decay=args.ema_decay)
 
     os.makedirs("checkpoints", exist_ok=True)
 
@@ -101,7 +103,7 @@ def train(args):
             noise = torch.randn_like(x_action).to(device)
 
             # Forward pass
-            out = model(x, x_image, x_state, noise)
+            out = model(x_action, x_image, x_state, noise)
 
             # Loss calculation
             loss = F.mse_loss(out, noise)
@@ -145,6 +147,8 @@ def train(args):
         avg_val_loss = sum(val_losses) / len(val_losses)
         wandb.log({"val/total_loss": avg_val_loss, "global_step": global_step})
 
+        evaluate_and_log(model=model, device=device, idx=global_step)
+
         print("------------- Checkpointing Logic -------------")
         checkpoint_model = DiffusionPolicy(model_config=model_config, config=diffusion_config).to(device)
         ema.copy_to(checkpoint_model)
@@ -153,6 +157,8 @@ def train(args):
             "optimizer_state_dict": optimiser.state_dict(),
             "global_step": global_step,
             "val_loss": avg_val_loss,
+            "model_config": model.model_config,
+            "diffusion_config": model.config
         }
 
         # Save 'latest' locally
@@ -178,8 +184,9 @@ def train(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="Diffusion Policy", description="Train diffusion policy for Push-T")
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning Rate")
+    parser.add_argument("--ema-decay", type=float, default=0.9999, help="EMA decay value")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch Size for training")
-    parser.add_argument("--max-timesteps", type=int, default=100000, help="Max timesteps for training")
+    parser.add_argument("--max-timesteps", type=int, default=100_000, help="Max timesteps for training")
 
     args = parser.parse_args()
 
