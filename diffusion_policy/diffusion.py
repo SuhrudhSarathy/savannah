@@ -30,6 +30,8 @@ class DiffusionPolicy(nn.Module):
             clip_sample=True,
         )
 
+        self.model.to(config.device)
+
     def forward(
         self, x: Tensor, x_image: Tensor, x_state: Tensor, noise: Tensor
     ) -> Tensor:
@@ -53,22 +55,23 @@ class DiffusionPolicy(nn.Module):
         return epsilon
 
     @torch.no_grad
-    def get_action(self, x: Tensor, x_image: Tensor, x_state: Tensor):
+    def get_action(self, x: Tensor, x_image: Tensor, x_state: Tensor, inference_timesteps: int = 10):
         # x (B, n_pred, state_dim)
         # x_image (B, n_obs, imgC, H, W)
-        # x_time (B, 1)
         # x_state (B, n_obs, state_dim)
 
         B, n_obs, _, _, _ = x_image.shape
         B, n_pred, state_dim = x.shape
 
+        self.ddim_scheduler.set_timesteps(inference_timesteps)
+
         x_t = x.clone()
-        for t in range(self.config.timesteps - 1, -1, -1):
+        for t in range(self.config.timesteps - 1, -1, -inference_timesteps):
             x_time = torch.full((B, 1), t, dtype=torch.long).to(
                 self.config.device
             )
 
-            pred_noise = self.model(x_t, x_image, x_state, x_time)
+            pred_noise = self.model["unet_policy"](x_t, x_image, x_state, x_time)
 
             x_t = self.ddim_scheduler.step(pred_noise, t, x_t).prev_sample
 
