@@ -1,21 +1,18 @@
+import argparse
+import copy
+import os
+from dataclasses import asdict
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.optim import AdamW
-
-from dataclasses import asdict
-from tqdm import tqdm
-
-from lerobot_dataset import create_dataset
-from diffusion import DiffusionPolicy, DiffusionPolicyConfig
-from unet import UNet1D, UNetConfig
-import os
-
-import argparse
 import wandb
-import copy
-
+from diffusion import DiffusionPolicy, DiffusionPolicyConfig
 from eval import evaluate_and_log
+from lerobot_dataset import create_dataset
+from torch.optim import AdamW
+from tqdm import tqdm
+from unet import UNet1D, UNetConfig
 
 dtype = torch.float32
 device = torch.device("cpu")
@@ -26,6 +23,7 @@ elif torch.mps.is_available():
     torch.mps.empty_cache()
     torch.mps.synchronize()
 print("Currently using device: ", device)
+
 
 class EMA:
     """
@@ -64,15 +62,17 @@ def train(args):
     diffusion_config = DiffusionPolicyConfig()
     diffusion_config.device = device
 
-    model = DiffusionPolicy(model_config=model_config, config=diffusion_config).to(device)
+    model = DiffusionPolicy(model_config=model_config, config=diffusion_config).to(
+        device
+    )
 
-    train_dataloader, val_dataloader = create_dataset()
+    train_dataloader, val_dataloader = create_dataset(batch_size=args.batch_size)
 
     wandb.init(
         project="diffusion-policy-training",
         config={
             "learning_rate": args.lr,
-            "architecture": "ACT",
+            "architecture": "Diffusion-Unet1D",
             "dataset": "push_T",
             "training_steps": int(args.max_timesteps),
             "description": "full push-t training",
@@ -90,7 +90,6 @@ def train(args):
     os.makedirs("checkpoints", exist_ok=True)
 
     while global_step < args.max_timesteps:
-
         print("----------------- Running Training Run -------------")
         model.train()
         for batch in tqdm(train_dataloader):
@@ -98,7 +97,6 @@ def train(args):
             x_image = batch["observation.image"].to(device)
             x_state = (batch["observation.state"].to(device) - 256.0) / 512.0
             x_action = (batch["action"].to(device) - 256.0) / 512.0
-            x = torch.randn_like(x_action).to(device)
 
             noise = torch.randn_like(x_action).to(device)
 
@@ -136,11 +134,12 @@ def train(args):
                 v_image = v_batch["observation.image"].to(device)
                 v_state = (v_batch["observation.state"].to(device) - 256.0) / 512.0
                 v_target = (v_batch["action"].to(device) - 256.0) / 512.0
-                v_x = torch.randn_like(v_target).to(device)
 
-                out = model.get_action(v_x, v_image, v_state, 20)
+                noise = torch.randn_like(v_target).to(device)
 
-                loss = F.mse_loss(out, v_target)
+                out = model(v_target, v_image, v_state, noise)
+
+                loss = F.mse_loss(out, noise)
 
                 val_losses.append(loss.item())
 
@@ -150,7 +149,9 @@ def train(args):
         evaluate_and_log(model=model, device=device, idx=global_step)
 
         print("------------- Checkpointing Logic -------------")
-        checkpoint_model = DiffusionPolicy(model_config=model_config, config=diffusion_config).to(device)
+        checkpoint_model = DiffusionPolicy(
+            model_config=model_config, config=diffusion_config
+        ).to(device)
         ema.copy_to(checkpoint_model)
         checkpoint = {
             "model_state_dict": checkpoint_model.state_dict(),
@@ -158,7 +159,7 @@ def train(args):
             "global_step": global_step,
             "val_loss": avg_val_loss,
             "model_config": model.model_config,
-            "diffusion_config": model.config
+            "diffusion_config": model.config,
         }
 
         # Save 'latest' locally
@@ -182,11 +183,19 @@ def train(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(prog="Diffusion Policy", description="Train diffusion policy for Push-T")
+    parser = argparse.ArgumentParser(
+        prog="Diffusion Policy", description="Train diffusion policy for Push-T"
+    )
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning Rate")
-    parser.add_argument("--ema-decay", type=float, default=0.9999, help="EMA decay value")
-    parser.add_argument("--batch-size", type=int, default=64, help="Batch Size for training")
-    parser.add_argument("--max-timesteps", type=int, default=100_000, help="Max timesteps for training")
+    parser.add_argument(
+        "--ema-decay", type=float, default=0.9999, help="EMA decay value"
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=64, help="Batch Size for training"
+    )
+    parser.add_argument(
+        "--max-timesteps", type=int, default=100_000, help="Max timesteps for training"
+    )
 
     args = parser.parse_args()
 

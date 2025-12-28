@@ -1,7 +1,7 @@
+import numpy as np
 import torch
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from torch.utils.data import DataLoader, Subset
-import numpy as np
 
 
 def create_dataset(
@@ -56,3 +56,6 @@ def create_dataset(
 
 if __name__ == "__main__":
     train, _ = create_dataset()
+    batch = next(iter(train))
+    x_image = batch["observation.image"]
+    print(x_image.min(), x_image.max())

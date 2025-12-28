@@ -2,9 +2,8 @@ from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
-from torch import Tensor
-
 from diffusers.schedulers.scheduling_ddim import DDIMScheduler
+from torch import Tensor
 from unet import UNet1D, UNetConfig
 
 
@@ -17,7 +16,11 @@ class DiffusionPolicyConfig:
 
 
 class DiffusionPolicy(nn.Module):
-    def __init__(self, model_config: UNetConfig = UNetConfig(), config: DiffusionPolicyConfig = DiffusionPolicyConfig()):
+    def __init__(
+        self,
+        model_config: UNetConfig = UNetConfig(),
+        config: DiffusionPolicyConfig = DiffusionPolicyConfig(),
+    ):
         super().__init__()
 
         self.model_config = model_config
@@ -41,9 +44,11 @@ class DiffusionPolicy(nn.Module):
         # x_state (B, n_obs, state_dim)
         # x_image (B, n_obs, imgC, H, W)
         # noise (B, n_pred, state_dim)
-        t = torch.randint(0, self.config.timesteps, size=(x.shape[0], 1)).to(
-            self.config.device
-        ).to(torch.long)
+        t = (
+            torch.randint(0, self.config.timesteps, size=(x.shape[0], 1))
+            .to(self.config.device)
+            .to(torch.long)
+        )
 
         x_noised = self.ddim_scheduler.add_noise(
             original_samples=x, noise=noise, timesteps=t
@@ -56,22 +61,22 @@ class DiffusionPolicy(nn.Module):
 
         return epsilon
 
-    @torch.no_grad
-    def get_action(self, x: Tensor, x_image: Tensor, x_state: Tensor, inference_timesteps: int = 10):
-        # x (B, n_pred, state_dim)
-        # x_image (B, n_obs, imgC, H, W)
-        # x_state (B, n_obs, state_dim)
+    @torch.no_grad()
+    def get_action(
+        self,
+        x: Tensor,
+        x_image: Tensor,
+        x_state: Tensor,
+        inference_timesteps: int = 50,
+    ):
+        B = x.shape[0]
 
-        B, n_obs, _, _, _ = x_image.shape
-        B, n_pred, state_dim = x.shape
-
-        self.ddim_scheduler.set_timesteps(inference_timesteps)
+        self.ddim_scheduler.set_timesteps(inference_timesteps, device=x.device)
 
         x_t = x.clone()
-        for t in range(self.config.timesteps - 1, -1, -inference_timesteps):
-            x_time = torch.full((B, 1), t, dtype=torch.long).to(
-                self.config.device
-            )
+
+        for t in self.ddim_scheduler.timesteps:
+            x_time = torch.full((B,), t, device=x.device, dtype=torch.long)
 
             pred_noise = self.model["unet_policy"](x_t, x_image, x_state, x_time)
 
