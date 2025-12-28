@@ -122,7 +122,6 @@ def train(args):
                 }
             )
             global_step += 1
-            break
 
         # Validation
         print("----------- Validating Learning -------------")
@@ -142,7 +141,6 @@ def train(args):
                 loss = F.mse_loss(out, v_target)
 
                 val_losses.append(loss.item())
-                break
 
         avg_val_loss = sum(val_losses) / len(val_losses)
         wandb.log({"val/total_loss": avg_val_loss, "global_step": global_step})
@@ -171,6 +169,7 @@ def train(args):
             )
 
         if global_step > args.max_timesteps:
+            print("Finished Training for full max timesteps")
             break
 
     wandb.finish()
