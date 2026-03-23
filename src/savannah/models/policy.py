@@ -4,15 +4,6 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
-from enum import StrEnum
-
-
-class ObservationKey(StrEnum):
-    images = "images"
-    state = "state"
-    gt_actions = "gt_actions"
-    actions = "actions"
-
 
 @dataclass
 class PolicyOutput:
