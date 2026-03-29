@@ -1,26 +1,24 @@
+from typing import Optional
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
 
-
-@dataclass
-class PolicyOutput:
-    actions: torch.Tensor
-    aux: dict | None = None
+from savannah.utils.policy import PolicyOutput
+from typing import Optional
 
 
 class Policy(ABC, nn.Module):
     @abstractmethod
-    def forward(self, obs: dict[str, torch.Tensor]) -> PolicyOutput: ...
+    def forward(
+        self, obs: dict[str, torch.Tensor], *args, **kwargs
+    ) -> PolicyOutput: ...
 
     @abstractmethod
     def compute_loss(
         self,
         obs: dict[str, torch.Tensor],
-        actions: torch.Tensor,
-        policy_output: PolicyOutput,
     ): ...
 
     @abstractmethod
@@ -33,6 +31,10 @@ class Policy(ABC, nn.Module):
     @property
     def action_horizon(self):
         return self._action_horizon
+
+    @property
+    def state_dim(self):
+        return self._state_dim
 
     def num_params(self) -> float:
         return sum(p.numel() for p in self.parameters() if p.requires_grad) / 1e6

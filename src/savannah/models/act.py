@@ -5,7 +5,8 @@ import torch.nn.functional as F
 from savannah.nn.transformer import TransformerEncoder, TransformerDecoder
 from savannah.nn.positional_embeddings import SinusoidalPositionalEncoding
 from savannah.models.vision_encoder import VisionEncoder
-from savannah.models.policy import Policy, PolicyOutput
+from savannah.models.policy import Policy
+from savannah.utils.policy import PolicyOutput
 from savannah.utils import ObservationKey
 
 from einops import repeat

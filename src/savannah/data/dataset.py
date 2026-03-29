@@ -90,3 +90,76 @@ class LerobotDatasetWrapper:
             pin_memory=device.type == "cuda",
         )
         return train_loader, val_loader
+
+
+if __name__ == "__main__":
+    # 1. Setup Device
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+    print(f"Using device: {device}")
+
+    # ==========================================
+    # TEST 1: Standard Single Observation (N=1)
+    # ==========================================
+    print("\n" + "=" * 50)
+    print("TESTING: obs_horizon = 1, action_horizon = 4")
+    print("=" * 50)
+
+    config_single = DataSetConfig(
+        repo_id="lerobot/pusht",
+        fps=10,
+        cameras=["image"],  # PushT's default camera name
+        obs_horizon=1,
+        action_horizon=4,
+        batch_size=2,
+        num_workers=0,  # Keep at 0 for clean error stack traces!
+        train_fraction=0.9,
+    )
+
+    try:
+        train_loader_single, _ = LerobotDatasetWrapper.create_loaders(
+            config_single, device
+        )
+        batch_single = next(iter(train_loader_single))
+
+        print("\nBatch Keys and Tensor Shapes (obs_horizon=1):")
+        for key, val in batch_single.items():
+            if isinstance(val, torch.Tensor):
+                print(f"  {key:<25}: {val.shape}")
+    except Exception as e:
+        print(f"❌ Failed on obs_horizon=1. Error: {e}")
+
+    # ==========================================
+    # TEST 2: Multi-Frame Observation (N=3)
+    # ==========================================
+    print("\n" + "=" * 50)
+    print("TESTING: obs_horizon = 3, action_horizon = 4")
+    print("=" * 50)
+
+    config_multi = DataSetConfig(
+        repo_id="lerobot/pusht",
+        fps=10,
+        cameras=["image"],
+        obs_horizon=3,
+        action_horizon=4,
+        batch_size=2,
+        num_workers=0,
+        train_fraction=0.9,
+    )
+
+    try:
+        train_loader_multi, _ = LerobotDatasetWrapper.create_loaders(
+            config_multi, device
+        )
+        batch_multi = next(iter(train_loader_multi))
+
+        print("\nBatch Keys and Tensor Shapes (obs_horizon=3):")
+        for key, val in batch_multi.items():
+            if isinstance(val, torch.Tensor):
+                print(f"  {key:<25}: {val.shape}")
+    except Exception as e:
+        print(f"❌ Failed on obs_horizon=3. Error: {e}")

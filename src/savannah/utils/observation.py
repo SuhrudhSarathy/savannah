@@ -6,3 +6,4 @@ class ObservationKey(StrEnum):
     state = "observation.state"
     gt_actions = "gt_action"
     actions = "action"
+    time = "time"
