@@ -45,9 +45,9 @@ def test_no_episode_leakage(loaders):
         ]
     )
 
-    assert train_episodes.isdisjoint(val_episodes), (
-        "Episode leak between train and val!"
-    )
+    assert train_episodes.isdisjoint(
+        val_episodes
+    ), "Episode leak between train and val!"
 
 
 @pytest.fixture(scope="module")

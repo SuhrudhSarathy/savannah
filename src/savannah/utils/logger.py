@@ -51,6 +51,29 @@ class ExperimentLogger:
                 f"[Step {step}] 🎬 Video generated for {metric_name} (Shape: {video_array.shape})"
             )
 
+    def log_model_artifact(
+        self, model_path: str, artifact_name: str, aliases: list[str] | None = None
+    ):
+        """
+        Uploads a saved checkpoint file to W&B as an artifact.
+        """
+        if self.use_wandb:
+            print(f"Uploading {model_path} to W&B Artifacts...")
+            try:
+                # 1. Initialize the Artifact object
+                artifact = wandb.Artifact(name=artifact_name, type="model")
+
+                # 2. Attach the local file
+                artifact.add_file(model_path)
+
+                # 3. Upload to the cloud
+                wandb.log_artifact(artifact, aliases=aliases)
+                print(f"Successfully uploaded {artifact_name}!")
+            except Exception as e:
+                print(f"Failed to upload model artifact: {e}")
+        else:
+            print(f"Debug mode active. Skipping artifact upload for {model_path}")
+
     def finish(self):
         """Cleanly closes the logger."""
         if self.use_wandb:

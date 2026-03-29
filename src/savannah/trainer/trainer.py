@@ -154,6 +154,23 @@ class PolicyTrainer:
             pbar.update(1)
 
         pbar.close()
+
+        best_model_path = os.path.join(self.config.checkpoint_dir, "best_model.ckpt")
+        latest_model_path = os.path.join(self.config.checkpoint_dir, "latest.ckpt")
+
+        if os.path.exists(best_model_path):
+            self.logger.log_model_artifact(
+                model_path=best_model_path,
+                artifact_name=f"flow_matching_pusht",
+                aliases=["best"],
+            )
+        elif os.path.exists(latest_model_path):
+            # Fallback in case we never beat the initial validation score
+            self.logger.log_model_artifact(
+                model_path=latest_model_path,
+                artifact_name=f"flow_matching_pusht",
+                aliases=["latest"],
+            )
         self.logger.finish()
         print("Training Complete!")
 
@@ -234,4 +251,4 @@ if __name__ == "__main__":
             f"Encountered Exception while Training: {e}. Traceback: \n{'-' * 10}\n{format_exc()}\n{'-' * 10}\n"
         )
     finally:
-        logger.finish()
+        print("Done with Training")
