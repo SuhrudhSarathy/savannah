@@ -1,10 +1,10 @@
-import torch
-import numpy as np
-import gymnasium as gym
 import gym_pusht  # Registers the env
+import gymnasium as gym
+import numpy as np
+import torch
 
-from savannah.utils.observation import ObservationKey
 from savannah.tasks import BaseRobotTask
+from savannah.utils.observation import ObservationKey
 
 
 class PushTTask(BaseRobotTask):
@@ -54,3 +54,19 @@ class PushTTask(BaseRobotTask):
         # Takes the chosen single action (or chunk) and un-normalizes
         action_np = action_tensor.cpu().numpy().reshape(-1)
         return (action_np * 512.0) + 256.0
+
+
+if __name__ == "__main__":
+    from savannah.data.dataset import DataSetConfig
+    from savannah.utils.device import get_device
+
+    ds_config = DataSetConfig(
+        repo_id="lerobot/pusht",
+        fps=10,
+        obs_horizon=1,
+        action_horizon=8,
+        cameras=["image"],
+    )
+    task = PushTTask(config=ds_config, device=get_device())
+    env = task.get_env()
+    print(env)

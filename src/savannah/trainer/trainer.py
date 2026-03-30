@@ -1,20 +1,21 @@
-import os
-import torch
 import copy
 import math
-from tqdm import tqdm
+import os
 from dataclasses import dataclass
+from traceback import format_exc
+
+import torch
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
+from tqdm import tqdm
 
 from savannah.models.policy import Policy
 from savannah.tasks import BaseRobotTask
-from savannah.utils.logger import ExperimentLogger
-from savannah.utils.eval_and_log import evaluate_and_log
-from savannah.utils.device import get_device
 from savannah.trainer.ema import EMA
 from savannah.trainer.scheduler import get_custom_scheduler
-from traceback import format_exc
+from savannah.utils.device import get_device
+from savannah.utils.eval_and_log import evaluate_and_log
+from savannah.utils.logger import ExperimentLogger
 
 
 @dataclass
@@ -23,6 +24,7 @@ class TrainConfig:
     training_steps: int = 100_000
     warmup_steps: int = 1000
     eval_freq: int = 5000
+    eval_using_sim: bool = False
     eval_episodes: int = 5
     eval_execute_steps: int = 8
     ema_decay: float = 0.9999
@@ -62,6 +64,7 @@ class PolicyTrainer:
         # Tracking
         self.global_step = 0
         self.best_success_rate = -1.0
+        self.best_val_loss = 10000.0
 
         os.makedirs(self.config.checkpoint_dir, exist_ok=True)
 
@@ -83,6 +86,9 @@ class PolicyTrainer:
 
         train_loader = self.task.get_train_loader()
         train_iter = iter(train_loader)
+
+        val_loader = self.task.get_val_loader()
+        val_iter = iter(val_loader)
 
         # Use a flat tqdm loop based on steps, rather than epochs
         pbar = tqdm(total=self.config.training_steps, desc="Training")
@@ -131,24 +137,40 @@ class PolicyTrainer:
                 print(
                     f"\n----------- Validating at Step {self.global_step} -------------"
                 )
+                val_losses = []
+                with torch.no_grad():
+                    for batch in tqdm(val_loader):
+                        batch = self.task.format_batch(raw_batch)
+                        loss = self.policy.compute_loss(batch)
 
-                success_rate, _ = evaluate_and_log(
-                    policy=self.ema.shadow,
-                    task=self.task,
-                    logger=self.logger,
-                    step=self.global_step,
-                    num_episodes=self.config.eval_episodes,
-                    execute_steps=self.config.eval_execute_steps,
-                )
+                        val_losses.append(loss.item())
 
+                avg_val_loss = torch.as_tensor(val_losses).mean().item()
+                self.save_checkpoint("latest", avg_val_loss)
+                if avg_val_loss < self.best_val_loss:
+                    self.best_val_loss = avg_val_loss
+                    self.save_checkpoint("best_model", avg_val_loss)
+                    print(f"New best model with Val loss: {self.best_val_loss}")
+
+                if self.config.eval_using_sim:
+                    success_rate, _ = evaluate_and_log(
+                        policy=self.ema.shadow,
+                        task=self.task,
+                        logger=self.logger,
+                        step=self.global_step,
+                        num_episodes=self.config.eval_episodes,
+                        execute_steps=self.config.eval_execute_steps,
+                    )
+
+                    if success_rate > self.best_success_rate:
+                        self.best_success_rate = success_rate
+                        self.save_checkpoint("best_model_success", success_rate)
+                        print(
+                            f"New best model with Success Rate: {self.best_success_rate}"
+                        )
+
+                # Use validation loss to check for best model
                 # Save latest checkpoint
-                self.save_checkpoint("latest", success_rate)
-
-                # Save best checkpoint
-                if success_rate >= self.best_success_rate:
-                    self.best_success_rate = success_rate
-                    self.save_checkpoint("best_model", success_rate)
-                    print(f"New best model! Success Rate: {success_rate * 100:.1f}%")
 
             self.global_step += 1
             pbar.update(1)
@@ -157,12 +179,20 @@ class PolicyTrainer:
 
         best_model_path = os.path.join(self.config.checkpoint_dir, "best_model.ckpt")
         latest_model_path = os.path.join(self.config.checkpoint_dir, "latest.ckpt")
+        best_model_success_path = os.path.join(
+            self.config.checkpoint_dir, "best_model_success.ckpt"
+        )
 
         if os.path.exists(best_model_path):
             self.logger.log_model_artifact(
                 model_path=best_model_path,
                 artifact_name=f"flow_matching_pusht",
                 aliases=["best"],
+            )
+            self.logger.log_model_artifact(
+                model_path=best_model_success_path,
+                artifact_name=f"flow_matching_pusht",
+                aliases=["best_success"],
             )
         elif os.path.exists(latest_model_path):
             # Fallback in case we never beat the initial validation score
@@ -176,13 +206,13 @@ class PolicyTrainer:
 
 
 if __name__ == "__main__":
+    from dataclasses import asdict
+
     from savannah.data.dataset import DataSetConfig
-    from savannah.tasks.pusht import PushTTask
+    from savannah.models.backbones.resnet_backbone import ResNetBackbone
     from savannah.models.flow_matching import FlowMatchingPolicy
     from savannah.models.vision_encoder import VisionEncoder
-    from savannah.models.backbones.resnet_backbone import ResNetBackbone
-
-    from dataclasses import asdict
+    from savannah.tasks.pusht import PushTTask
 
     # Bunch of params.
     # TODO: Get all of these from hydra config
@@ -233,6 +263,7 @@ if __name__ == "__main__":
         training_steps=70_000,
         eval_freq=2000,  # Evaluate every 5000 steps
         eval_episodes=1,
+        eval_using_sim=True,
     )
 
     logger = ExperimentLogger(

@@ -11,19 +11,18 @@ from typing import Optional
 
 class Policy(ABC, nn.Module):
     @abstractmethod
-    def forward(self, obs: dict[str, torch.Tensor], *args, **kwargs) -> PolicyOutput:
-        ...
+    def forward(
+        self, obs: dict[str, torch.Tensor], *args, **kwargs
+    ) -> PolicyOutput: ...
 
     @abstractmethod
     def compute_loss(
         self,
         obs: dict[str, torch.Tensor],
-    ):
-        ...
+    ): ...
 
     @abstractmethod
-    def compute_action(self, obs: dict[str, torch.Tensor]) -> PolicyOutput:
-        ...
+    def compute_action(self, obs: dict[str, torch.Tensor]) -> PolicyOutput: ...
 
     @property
     def action_dim(self):

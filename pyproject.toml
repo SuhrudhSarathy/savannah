@@ -13,12 +13,15 @@ dependencies = [
     "hydra-core",
     "omegaconf",
     "wandb",
+    "wandb[media]",
     "tqdm",
     "pillow",
     "imageio",
     "matplotlib",
     "lerobot",
     "metaworld",
+    "gym-pusht",
+    "pymunk==6.11.1"
 ]
 
 [project.optional-dependencies]
