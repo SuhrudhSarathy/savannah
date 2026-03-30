@@ -1,3 +1,4 @@
+from dill.tests.test_registered import success
 import copy
 import math
 import os
@@ -146,6 +147,11 @@ class PolicyTrainer:
                         val_losses.append(loss.item())
 
                 avg_val_loss = torch.as_tensor(val_losses).mean().item()
+
+                self.logger.log_scalars(
+                    {"val/loss": avg_val_loss}, step=self.global_step
+                )
+
                 self.save_checkpoint("latest", avg_val_loss)
                 if avg_val_loss < self.best_val_loss:
                     self.best_val_loss = avg_val_loss
@@ -153,7 +159,7 @@ class PolicyTrainer:
                     print(f"New best model with Val loss: {self.best_val_loss}")
 
                 if self.config.eval_using_sim:
-                    success_rate, _ = evaluate_and_log(
+                    success_rate, mean_reward = evaluate_and_log(
                         policy=self.ema.shadow,
                         task=self.task,
                         logger=self.logger,
@@ -162,15 +168,20 @@ class PolicyTrainer:
                         execute_steps=self.config.eval_execute_steps,
                     )
 
+                    self.logger.log_scalars(
+                        {
+                            "val/success_rate": success_rate,
+                            "val/mean_reward": mean_reward,
+                        },
+                        step=self.global_step,
+                    )
+
                     if success_rate > self.best_success_rate:
                         self.best_success_rate = success_rate
                         self.save_checkpoint("best_model_success", success_rate)
                         print(
                             f"New best model with Success Rate: {self.best_success_rate}"
                         )
-
-                # Use validation loss to check for best model
-                # Save latest checkpoint
 
             self.global_step += 1
             pbar.update(1)

@@ -14,7 +14,7 @@ def evaluate_and_log(
     step: int,
     num_episodes: int = 3,
     execute_steps: int = 8,
-):
+) -> tuple[float, float]:
     """
     Evaluates the policy using receding horizon control (action chunking).
     """
