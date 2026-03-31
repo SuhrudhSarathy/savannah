@@ -21,7 +21,7 @@ from savannah.utils.logger import ExperimentLogger
 
 @dataclass
 class TrainConfig:
-    lr: float = 1e-4
+    lr: float = 2e-4
     training_steps: int = 100_000
     warmup_steps: int = 1000
     eval_freq: int = 5000
@@ -205,7 +205,7 @@ class PolicyTrainer:
                 artifact_name=f"flow_matching_pusht",
                 aliases=["best_success"],
             )
-        elif os.path.exists(latest_model_path):
+        if os.path.exists(latest_model_path):
             # Fallback in case we never beat the initial validation score
             self.logger.log_model_artifact(
                 model_path=latest_model_path,
@@ -246,7 +246,7 @@ if __name__ == "__main__":
         fps=10,
         obs_horizon=obs_horizon,
         action_horizon=action_horizon,
-        batch_size=8,
+        batch_size=32,
     )
 
     # 3. Instantiate Architecture
@@ -271,8 +271,8 @@ if __name__ == "__main__":
 
     # 2. Setup Configs
     train_config = TrainConfig(
-        training_steps=70_000,
-        eval_freq=2000,  # Evaluate every 5000 steps
+        training_steps=100_000,
+        eval_freq=4000,  # Evaluate every 5000 steps
         eval_episodes=1,
         eval_using_sim=True,
     )

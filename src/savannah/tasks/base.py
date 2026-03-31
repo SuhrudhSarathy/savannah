@@ -6,6 +6,7 @@ from typing import Dict, Any
 
 from savannah.utils.observation import ObservationKey
 from savannah.data.dataset import DataSetConfig, LerobotDatasetWrapper
+from collections import deque
 
 
 class BaseRobotTask(ABC):
@@ -53,6 +54,15 @@ class BaseRobotTask(ABC):
         """
         Converts a raw Gym observation dict into the exact normalized tensor
         dict expected by `policy.compute_action()`.
+        """
+        ...
+
+    @abstractmethod
+    def preprocess_observation_history(self, obs_history: deque) -> dict:
+        """
+        Prepares a history of Gym observations for inference.
+        obs_history: deque of raw obs dicts, oldest first, newest last.
+                     Length should equal obs_horizon used during training.
         """
         ...
 

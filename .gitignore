@@ -5,3 +5,4 @@ wandb/
 checkpoints/
 videos/
 *.egg-info
+*artifacts

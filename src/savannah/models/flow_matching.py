@@ -92,10 +92,12 @@ class FMTransformerBlock(nn.Module):
 class AdaLN(nn.Module):
     def __init__(self, embed_dim: int):
         super().__init__()
+        self.norm = nn.LayerNorm(embed_dim)
         self.embed_dim = embed_dim
         self.mlp = nn.Linear(embed_dim, 2 * embed_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.norm(x)
         ln = self.mlp(x)
         gamma, beta = torch.split(ln, self.embed_dim, dim=-1)
 
@@ -247,9 +249,6 @@ class FlowMatchingPolicy(Policy):
 
         # (B, 1) -> (B, 1, embed_dim)
         x_time = self.time_embedding(x_time).unsqueeze(1)
-
-        # (B, N_obs, action_dim) -> (B, N_obs, embed_dim)
-        x_noisy_actions = self.action_embedding(noisy_actions)
 
         # Project the noisy actions to embeding space
         # (B, N_obs, action_dim) -> (B, N_obs, embed_dim)
