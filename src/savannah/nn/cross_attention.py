@@ -1,8 +1,9 @@
+from math import sqrt
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-from math import sqrt
 
 
 class CrossAttention(nn.Module):
@@ -48,7 +49,7 @@ class CrossAttention(nn.Module):
         )
 
         if self.use_sdpa:
-            attn = F.scaled_dot_product_attention(q, k, v)
+            attn = F.scaled_dot_product_attention(q, k, v, is_causal=False)
         else:
             k_T = rearrange(k, "b nh t hs -> b nh hs t")
 

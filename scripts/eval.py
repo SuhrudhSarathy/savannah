@@ -1,32 +1,34 @@
-from savannah.utils.observation import ObservationKey
-from savannah.utils.device import get_device
 import os
 import sys
-import torch
-import gymnasium as gym
-import gym_pusht
-import wandb
-from dataclasses import asdict
 from collections import deque
+from dataclasses import asdict
+
+import gym_pusht
+import gymnasium as gym
+import torch
+
+import wandb
+from savannah.utils.device import get_device
+from savannah.utils.observation import ObservationKey
 
 # --- 1. Python 3.12 Compatibility Patch ---
 try:
     import imp
 except ImportError:
-    from types import ModuleType
     import importlib.util
+    from types import ModuleType
 
     imp = ModuleType("imp")
     sys.modules["imp"] = imp
 
 # --- 2. Savannah Imports ---
+from savannah.data.dataset import DataSetConfig
+from savannah.models.backbones.resnet_backbone import ResNetBackbone
 from savannah.models.flow_matching import FlowMatchingPolicy
 from savannah.models.vision_encoder import VisionEncoder
-from savannah.models.backbones.resnet_backbone import ResNetBackbone
-from savannah.tasks.pusht import PushTTask
-from savannah.data.dataset import DataSetConfig
-from savannah.utils.eval_and_log import ActionBuffer
 from savannah.tasks import RecordedEnv
+from savannah.tasks.pusht import PushTTask
+from savannah.utils.eval_and_log import ActionBuffer
 
 
 def download_artifact(entity, project, run_id, alias="best"):
@@ -60,7 +62,7 @@ def run_live_eval(checkpoint_path, repo_id="lerobot/pusht", video_folder="./vide
         fps=10,
         obs_horizon=obs_horizon,
         action_horizon=action_horizon,
-        batch_size=32,
+        batch_size=1,
     )
     task = PushTTask(config=dataset_config, device=device)
 
@@ -108,56 +110,56 @@ def run_live_eval(checkpoint_path, repo_id="lerobot/pusht", video_folder="./vide
     print("GT:  ", gt_actions[0])
     print("MSE: ", torch.nn.functional.mse_loss(pred_actions, gt_actions).item())
 
-    # From the dataset
-    batch = next(iter(dataloader))
-    print(
-        "Dataset image range:",
-        batch["observation.image"].min(),
-        batch["observation.image"].max(),
-    )
-    print(
-        "Dataset state range:",
-        batch["observation.state"].min(),
-        batch["observation.state"].max(),
-    )
-    print("Dataset action range:", batch["action"].min(), batch["action"].max())
+    # # From the dataset
+    # batch = next(iter(dataloader))
+    # print(
+    #     "Dataset image range:",
+    #     batch["observation.image"].min(),
+    #     batch["observation.image"].max(),
+    # )
+    # print(
+    #     "Dataset state range:",
+    #     batch["observation.state"].min(),
+    #     batch["observation.state"].max(),
+    # )
+    # print("Dataset action range:", batch["action"].min(), batch["action"].max())
 
     # After format_batch
-    formatted = task.format_batch(batch)
-    print(
-        "Formatted image range:",
-        formatted[ObservationKey.images][0].min(),
-        formatted[ObservationKey.images][0].max(),
-    )
-    print(
-        "Formatted state range:",
-        formatted[ObservationKey.state].min(),
-        formatted[ObservationKey.state].max(),
-    )
-    print(
-        "Formatted actions range:",
-        formatted[ObservationKey.gt_actions].min(),
-        formatted[ObservationKey.gt_actions].max(),
-    )
+    # formatted = task.format_batch(batch)
+    # print(
+    #     "Formatted image range:",
+    #     formatted[ObservationKey.images][0].min(),
+    #     formatted[ObservationKey.images][0].max(),
+    # )
+    # print(
+    #     "Formatted state range:",
+    #     formatted[ObservationKey.state].min(),
+    #     formatted[ObservationKey.state].max(),
+    # )
+    # print(
+    #     "Formatted actions range:",
+    #     formatted[ObservationKey.gt_actions].min(),
+    #     formatted[ObservationKey.gt_actions].max(),
+    # )
 
     # From the gym env raw obs
-    raw_obs, _ = env.reset()
-    print("Gym image range:", raw_obs["pixels"].min(), raw_obs["pixels"].max())
-    print("Gym state range:", raw_obs["agent_pos"].min(), raw_obs["agent_pos"].max())
+    # raw_obs, _ = env.reset()
+    # print("Gym image range:", raw_obs["pixels"].min(), raw_obs["pixels"].max())
+    # print("Gym state range:", raw_obs["agent_pos"].min(), raw_obs["agent_pos"].max())
 
-    # After preprocess_observation_history
-    obs_history = deque([raw_obs] * obs_horizon, maxlen=obs_horizon)
-    obs_dict = task.preprocess_observation_history(obs_history)
-    print(
-        "Preprocessed image range:",
-        obs_dict[ObservationKey.images][0].min(),
-        obs_dict[ObservationKey.images][0].max(),
-    )
-    print(
-        "Preprocessed state range:",
-        obs_dict[ObservationKey.state].min(),
-        obs_dict[ObservationKey.state].max(),
-    )
+    # # After preprocess_observation_history
+    # obs_history = deque([raw_obs] * obs_horizon, maxlen=obs_horizon)
+    # obs_dict = task.preprocess_observation_history(obs_history)
+    # print(
+    #     "Preprocessed image range:",
+    #     obs_dict[ObservationKey.images][0].min(),
+    #     obs_dict[ObservationKey.images][0].max(),
+    # )
+    # print(
+    #     "Preprocessed state range:",
+    #     obs_dict[ObservationKey.state].min(),
+    #     obs_dict[ObservationKey.state].max(),
+    # )
 
     # for ep in range(1):
     #     raw_obs, _ = env.reset()
@@ -208,6 +210,8 @@ if __name__ == "__main__":
     WANDB_ENTITY = "suhrudhsarathy"
     WANDB_PROJECT = "flow-matching-robotics"
 
-    # ckpt_path = download_artifact(WANDB_ENTITY, WANDB_PROJECT, "flow_matching_pusht", alias="v0")
-    ckpt_path = "/Users/suhrudh/savannah/scripts/artifacts/flow_matching_pusht:v0/best_model.ckpt"
+    ckpt_path = download_artifact(
+        WANDB_ENTITY, WANDB_PROJECT, "flow_matching_pusht", alias="v0"
+    )
+    # ckpt_path = "/Users/suhrudh/savannah/scripts/artifacts/flow_matching_pusht:v0/best_model.ckpt"
     run_live_eval(ckpt_path)

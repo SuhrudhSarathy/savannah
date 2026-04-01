@@ -1,10 +1,12 @@
-import torch
-from savannah.utils.action_buffer import ActionBuffer
-from savannah.utils.logger import ExperimentLogger
-from savannah.models import Policy
-from savannah.tasks import BaseRobotTask
+from collections import deque
 
 import numpy as np
+import torch
+
+from savannah.models import Policy
+from savannah.tasks import BaseRobotTask
+from savannah.utils.action_buffer import ActionBuffer
+from savannah.utils.logger import ExperimentLogger
 
 
 def evaluate_and_log(
@@ -14,6 +16,7 @@ def evaluate_and_log(
     step: int,
     num_episodes: int = 3,
     execute_steps: int = 8,
+    obs_horizon: int = 3,
 ) -> tuple[float, float]:
     """
     Evaluates the policy using receding horizon control (action chunking).
@@ -35,6 +38,10 @@ def evaluate_and_log(
 
         # CRITICAL: Reset the buffer for every new episode!
         action_buffer = ActionBuffer(execute_steps=execute_steps)
+        obs_history = deque(
+            [raw_obs] * obs_horizon,
+            maxlen=obs_horizon,
+        )
 
         while not done:
             # 1. Render and collect frame for logging (W&B expects C, H, W)
@@ -44,7 +51,7 @@ def evaluate_and_log(
             # 2. Only query the heavy neural network if we are out of actions!
             if action_buffer.is_empty():
                 # Task handles all normalizations and tensor casting
-                obs_dict = task.preprocess_observation(raw_obs)
+                obs_dict = task.preprocess_observation_history(obs_history)
 
                 with torch.no_grad():
                     policy_out = policy.compute_action(obs_dict)
@@ -61,6 +68,7 @@ def evaluate_and_log(
 
             # 5. Step the environment
             raw_obs, reward, terminated, truncated, info = env.step(action_to_apply)
+            obs_history.append(raw_obs)
 
             cum_reward += reward
             done = terminated or truncated

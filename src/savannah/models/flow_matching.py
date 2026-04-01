@@ -1,91 +1,79 @@
-from lerobot.processor import PolicyAction
-from savannah.utils.device import get_device
+from typing import Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-from typing import Optional
+from lerobot.processor import PolicyAction
 
+from savannah.models.policy import Policy
+from savannah.models.vision_encoder import VisionEncoder
 from savannah.nn import SelfAttention
+from savannah.nn.cross_attention import CrossAttention
 from savannah.nn.positional_embeddings import SinusoidalPositionalEncoding
 from savannah.nn.time_embedding import TimeEmbedding
-from savannah.utils.policy import PolicyOutput
-from savannah.models.vision_encoder import VisionEncoder
-from savannah.models.policy import Policy
+from savannah.utils.device import get_device
 from savannah.utils.observation import ObservationKey
+from savannah.utils.policy import PolicyOutput
 
 
 class FMTransformerBlock(nn.Module):
-    def __init__(
-        self,
-        embed_dim: int,
-        num_attn_heads: int,
-        feedforward_dim: int,
-        dropout: float = 0.1,
-    ):
+    def __init__(self, embed_dim, num_attn_heads, feedforward_dim, dropout=0.1):
         super().__init__()
         self.embed_dim = embed_dim
-        self.num_attn_heads = num_attn_heads
-        self.feedforward_dim = feedforward_dim
 
         # Self Attn
-        self.attn_block = SelfAttention(self.embed_dim, self.num_attn_heads)
-
-        self.layer_norm1 = nn.LayerNorm(self.embed_dim)
-        self.layer_norm2 = nn.LayerNorm(self.embed_dim)
-
-        # MLP to process timestep
-        self.timestep_mlp = nn.Sequential(
-            nn.Linear(self.embed_dim, 6 * self.embed_dim),
-            nn.GELU(),
-            nn.Linear(6 * self.embed_dim, 6 * self.embed_dim),
-        )
-
-        # FFN MLP
+        self.attn_block = SelfAttention(embed_dim, num_attn_heads)
+        # Cross Attn
+        self.cross_attn_block = CrossAttention(embed_dim, num_attn_heads)
+        # FFN
         self.ffn_mlp = nn.Sequential(
-            nn.Linear(self.embed_dim, self.feedforward_dim),
+            nn.Linear(embed_dim, feedforward_dim),
             nn.GELU(),
-            nn.Linear(self.feedforward_dim, self.embed_dim),
+            nn.Linear(feedforward_dim, embed_dim),
         )
 
-        # Droupout
+        # Three norms — one per sub-block
+        self.layer_norm1 = nn.LayerNorm(embed_dim)  # before self attn
+        self.layer_norm2 = nn.LayerNorm(embed_dim)  # before cross attn
+        self.layer_norm3 = nn.LayerNorm(embed_dim)  # before ffn
+
+        # AdaLN timestep MLP — only for self attn and ffn (4 params, not 6)
+        self.timestep_mlp = nn.Sequential(
+            nn.Linear(embed_dim, 4 * embed_dim),
+            nn.GELU(),
+            nn.Linear(4 * embed_dim, 4 * embed_dim),
+        )
+
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
-        # x (B, T, n_embed)
-        # t (B, 1, n_embed)
+    def forward(self, x, x_cond, t):
+        # x:      (B, action_horizon, embed_dim)
+        # x_cond: (B, obs_tokens, embed_dim)
+        # t:      (B, 1, embed_dim)
 
-        # (B, 1, n_embed) -> (B, 1, 6 * n_embed)
+        # 4 AdaLN params — only self attn and ffn are time conditioned
         timestep = self.timestep_mlp(t)
+        beta1, gamma1, beta2, gamma2 = torch.split(timestep, self.embed_dim, dim=-1)
 
-        # AdaLN
-        alpha1, beta1, gamma1, alpha2, beta2, gamma2 = torch.split(
-            timestep, self.embed_dim, dim=-1
-        )
-
-        # ----- Attention
+        # Self attention — action tokens attend to each other, time conditioned
         x1 = self.layer_norm1(x)
         x1 = beta1 * x1 + gamma1
         x1 = self.attn_block(x1)
-
-        x1 = alpha1 * x1
-
-        # Residual connection
         x = x + x1
-        # ----------
 
-        # ------- FFN
+        # Cross attention — action tokens attend to obs context, no time conditioning
         x2 = self.layer_norm2(x)
-        x2 = beta2 * x2 + gamma2
-        x2 = self.ffn_mlp(x2)
+        x2 = self.cross_attn_block(x, x_cond)
+        x = x + x2
 
-        x2 = alpha2 * x2
-
-        # Residual connection
-        x2 = x + x2
+        # FFN — time conditioned
+        x3 = self.layer_norm3(x)
+        x3 = beta2 * x3 + gamma2
+        x3 = self.ffn_mlp(x3)
+        x = x + x3
 
         x = self.dropout(x)
-
         return x
 
 
@@ -263,18 +251,19 @@ class FlowMatchingPolicy(Policy):
         x_noisy_actions = x_noisy_actions + x_noisy_actions_time_embed
 
         # Concatenate image tokens and proprio tokens
-        x_input_tokens = torch.cat([x_cam_tokens, x_state, x_noisy_actions], dim=1)
+        # x_input_tokens = torch.cat([x_cam_tokens, x_state, x_noisy_actions], dim=1)
+        x_cond_tokens = torch.cat([x_cam_tokens, x_state], dim=1)
 
         for block in self.fm_blocks:
             # (B, T, n_embed) -> (B, T, n_embed)
-            x_input_tokens = block(x_input_tokens, x_time)
+            x_input_tokens = block(x_noisy_actions, x_cond_tokens, x_time)
 
         # (B, T, embed_dim) -> (B, T, embed_dim)
         x_out = self.layer_norm(x_input_tokens)
 
-        # T = cam_tokens + N_state + N_obs
+        # T = N_obs
         # (B, T, embed_dim) -> (B, N_obs, embed_dim)
-        x_out_action = x_out[:, -self.action_horizon :, :]
+        x_out_action = x_out
 
         # (B, N_obs, embed_dim) -> (B, N_obs, action_dim)
         x_out_action = self.action_reprojection(x_out_action)
@@ -297,6 +286,7 @@ class FlowMatchingPolicy(Policy):
             # Run the inference
             for i in range(self.flowmatching_inference_steps):
                 t_val = i * dt
+
                 t_tensor = torch.full((B,), t_val, device=device)
 
                 obs[ObservationKey.time] = t_tensor

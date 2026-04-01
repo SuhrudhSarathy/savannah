@@ -1,4 +1,3 @@
-from dill.tests.test_registered import success
 import copy
 import math
 import os
@@ -6,6 +5,7 @@ from dataclasses import dataclass
 from traceback import format_exc
 
 import torch
+from dill.tests.test_registered import success
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 from tqdm import tqdm
@@ -246,7 +246,7 @@ if __name__ == "__main__":
         fps=10,
         obs_horizon=obs_horizon,
         action_horizon=action_horizon,
-        batch_size=32,
+        batch_size=8,
     )
 
     # 3. Instantiate Architecture
@@ -272,7 +272,7 @@ if __name__ == "__main__":
     # 2. Setup Configs
     train_config = TrainConfig(
         training_steps=100_000,
-        eval_freq=4000,  # Evaluate every 5000 steps
+        eval_freq=2000,  # Evaluate every 5000 steps
         eval_episodes=1,
         eval_using_sim=True,
     )
