@@ -80,12 +80,13 @@ def run_live_eval(checkpoint_path, repo_id="lerobot/pusht", video_folder="./vide
         action_horizon,
         vision_encoder,
         num_cameras,
+        flowmatching_inference_steps=100,
     ).to(device)
 
     # 3. Load EMA Weights
     print(f"Loading weights from {checkpoint_path}...")
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    policy.load_state_dict(checkpoint["ema_state_dict"])
+    policy.load_state_dict(checkpoint["model_state_dict"])
     policy.eval()
 
     # 4. Use Task to get the specific Eval Env
@@ -96,19 +97,24 @@ def run_live_eval(checkpoint_path, repo_id="lerobot/pusht", video_folder="./vide
         name_prefix="flow-matching-eval",
     )
 
-    dataloader = task.get_train_loader()
-    batch = next(iter(dataloader))
-    batch = task.format_batch(batch)
+    # dataloader = task.get_train_loader()
+    # iterator = iter(dataloader)
+    # for i in range(10):
+    #     batch = next(iterator)
+    #     batch = task.format_batch(batch)
 
-    with torch.no_grad():
-        policy_out = policy.compute_action(batch)
+    #     print(batch[ObservationKey.state])
 
-    pred_actions = policy_out.actions  # (B, action_horizon, 2)
-    gt_actions = batch[ObservationKey.gt_actions]  # (B, action_horizon, 2)
+    #     with torch.no_grad():
+    #         policy_out = policy.compute_action(batch)
 
-    print("Pred:", pred_actions[0])
-    print("GT:  ", gt_actions[0])
-    print("MSE: ", torch.nn.functional.mse_loss(pred_actions, gt_actions).item())
+    #     pred_actions = policy_out.actions  # (B, action_horizon, 2)
+    #     gt_actions = batch[ObservationKey.gt_actions]  # (B, action_horizon, 2)
+
+    #     print("Pred:", pred_actions[0])
+    #     print("GT:  ", gt_actions[0])
+    #     print("MSE: ", torch.nn.functional.mse_loss(pred_actions, gt_actions).item())
+    #     print("*"*20)
 
     # # From the dataset
     # batch = next(iter(dataloader))
@@ -161,46 +167,49 @@ def run_live_eval(checkpoint_path, repo_id="lerobot/pusht", video_folder="./vide
     #     obs_dict[ObservationKey.state].max(),
     # )
 
-    # for ep in range(1):
-    #     raw_obs, _ = env.reset()
-    #     done = False
+    for ep in range(3):
+        raw_obs, _ = env.reset()
+        done = False
 
-    #     # Use our generic ActionBuffer for smooth Receding Horizon Control
-    #     action_buffer = ActionBuffer(execute_steps=4)
+        # Use our generic ActionBuffer for smooth Receding Horizon Control
+        action_buffer = ActionBuffer(execute_steps=4)
 
-    #     obs_history = deque(
-    #                 [raw_obs] * obs_horizon,
-    #                 maxlen=obs_horizon,
-    #             )
+        obs_history = deque(
+            [raw_obs] * obs_horizon,
+            maxlen=obs_horizon,
+        )
 
-    #     print(f"--- Episode {ep+1} ---")
-    #     while not done:
-    #         # Render for the human eye (handled by gym)
-    #         env.render()
+        print(f"--- Episode {ep + 1} ---")
+        while not done:
+            # Render for the human eye (handled by gym)
+            env.render()
 
-    #         if action_buffer.is_empty():
-    #             # USE THE TASK DIRECTLY: This handles the 255.0 div,
-    #             # the (pos - 256)/512, and the (1, 1, C, H, W) unsqueezing.
-    #             obs_dict = task.preprocess_observation_history(obs_history)
-    #             print("Len of Observation Key: ", obs_dict[ObservationKey.images][0].shape, obs_dict[ObservationKey.state])
+            if action_buffer.is_empty():
+                # USE THE TASK DIRECTLY: This handles the 255.0 div,
+                # the (pos - 256)/512, and the (1, 1, C, H, W) unsqueezing.
+                obs_dict = task.preprocess_observation_history(obs_history)
+                # print("Len of Observation Key: ", obs_dict[ObservationKey.images][0].shape, obs_dict[ObservationKey.state])
 
-    #             with torch.no_grad():
-    #                 policy_out = policy.compute_action(obs_dict)
+                with torch.no_grad():
+                    policy_out = policy.compute_action(obs_dict)
 
-    #             action_buffer.push(policy_out.actions[0][1: 5])
+                action_buffer.push(policy_out.actions[0][0:4])
 
-    #         # Pop and execute
-    #         raw_action = action_buffer.pop()
+                # Pop and execute
+            raw_action = action_buffer.pop()
+            # raw_action = policy_out.actions[0][0]
+            # print(raw_action)
 
-    #         # USE THE TASK DIRECTLY: Un-normalizes [-1, 1] -> [0, 512]
-    #         action_to_apply = task.postprocess_action(raw_action)
-    #         print(action_to_apply)
+            # USE THE TASK DIRECTLY: Un-normalizes [-1, 1] -> [0, 512]
+            raw_action = torch.clamp(raw_action, -1, 1)
+            action_to_apply = task.postprocess_action(raw_action)
+            print(f"Raw Action: {raw_action}. Action to apply: {action_to_apply}")
 
-    #         raw_obs, reward, terminated, truncated, info = env.step(action_to_apply)
+            raw_obs, reward, terminated, truncated, info = env.step(action_to_apply)
 
-    #         obs_history.append(raw_obs)
-    #         done = terminated or truncated
-    #     print(f"Result: Terminated: {terminated}; Truncated: {truncated}")
+            obs_history.append(raw_obs)
+            done = terminated or truncated
+        print(f"Result: Terminated: {terminated}; Truncated: {truncated}")
 
     env.close()
 
@@ -210,8 +219,10 @@ if __name__ == "__main__":
     WANDB_ENTITY = "suhrudhsarathy"
     WANDB_PROJECT = "flow-matching-robotics"
 
-    ckpt_path = download_artifact(
-        WANDB_ENTITY, WANDB_PROJECT, "flow_matching_pusht", alias="v0"
+    # ckpt_path = download_artifact(
+    #     WANDB_ENTITY, WANDB_PROJECT, "flow_matching_pusht", alias="v4"
+    # )
+    ckpt_path = (
+        "/Users/suhrudh/savannah/scripts/artifacts/flow_matching_pusht:v0/latest.ckpt"
     )
-    # ckpt_path = "/Users/suhrudh/savannah/scripts/artifacts/flow_matching_pusht:v0/best_model.ckpt"
     run_live_eval(ckpt_path)

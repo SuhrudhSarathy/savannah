@@ -246,7 +246,7 @@ if __name__ == "__main__":
         fps=10,
         obs_horizon=obs_horizon,
         action_horizon=action_horizon,
-        batch_size=8,
+        batch_size=16,
     )
 
     # 3. Instantiate Architecture

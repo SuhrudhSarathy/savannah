@@ -23,9 +23,11 @@ class FMTransformerBlock(nn.Module):
         self.embed_dim = embed_dim
 
         # Self Attn
-        self.attn_block = SelfAttention(embed_dim, num_attn_heads)
+        self.self_attn_block = SelfAttention(embed_dim, num_attn_heads)
+
         # Cross Attn
         self.cross_attn_block = CrossAttention(embed_dim, num_attn_heads)
+
         # FFN
         self.ffn_mlp = nn.Sequential(
             nn.Linear(embed_dim, feedforward_dim),
@@ -38,14 +40,21 @@ class FMTransformerBlock(nn.Module):
         self.layer_norm2 = nn.LayerNorm(embed_dim)  # before cross attn
         self.layer_norm3 = nn.LayerNorm(embed_dim)  # before ffn
 
-        # AdaLN timestep MLP — only for self attn and ffn (4 params, not 6)
+        # AdaLN condition MLP — need three parameters for every block.
+        # In total, 9 params
         self.timestep_mlp = nn.Sequential(
-            nn.Linear(embed_dim, 4 * embed_dim),
+            nn.Linear(embed_dim, 9 * embed_dim),
             nn.GELU(),
-            nn.Linear(4 * embed_dim, 4 * embed_dim),
+            nn.Linear(9 * embed_dim, 9 * embed_dim),
         )
 
         self.dropout = nn.Dropout(dropout)
+
+        self._initialise_zero_weights()
+
+    def _initialise_zero_weights(self):
+        nn.init.constant_(self.timestep_mlp[-1].weight, 0.0)
+        nn.init.constant_(self.timestep_mlp[-1].bias, 0.0)
 
     def forward(self, x, x_cond, t):
         # x:      (B, action_horizon, embed_dim)
@@ -54,23 +63,29 @@ class FMTransformerBlock(nn.Module):
 
         # 4 AdaLN params — only self attn and ffn are time conditioned
         timestep = self.timestep_mlp(t)
-        beta1, gamma1, beta2, gamma2 = torch.split(timestep, self.embed_dim, dim=-1)
+        alpha1, beta1, gamma1, alpha2, beta2, gamma2, alpha3, beta3, gamma3 = (
+            torch.split(timestep, self.embed_dim, dim=-1)
+        )
 
         # Self attention — action tokens attend to each other, time conditioned
         x1 = self.layer_norm1(x)
         x1 = beta1 * x1 + gamma1
-        x1 = self.attn_block(x1)
+        x1 = self.self_attn_block(x1)
+        x1 = alpha1 * x1
         x = x + x1
 
         # Cross attention — action tokens attend to obs context, no time conditioning
         x2 = self.layer_norm2(x)
-        x2 = self.cross_attn_block(x, x_cond)
+        x2 = beta2 * x2 + gamma2
+        x2 = self.cross_attn_block(x2, x_cond)
+        x2 = alpha2 * x2
         x = x + x2
 
         # FFN — time conditioned
         x3 = self.layer_norm3(x)
-        x3 = beta2 * x3 + gamma2
+        x3 = beta3 * x3 + gamma3
         x3 = self.ffn_mlp(x3)
+        x3 = alpha3 * x3
         x = x + x3
 
         x = self.dropout(x)
@@ -80,16 +95,28 @@ class FMTransformerBlock(nn.Module):
 class AdaLN(nn.Module):
     def __init__(self, embed_dim: int):
         super().__init__()
-        self.norm = nn.LayerNorm(embed_dim)
+        self.norm = nn.LayerNorm(embed_dim, elementwise_affine=False)
         self.embed_dim = embed_dim
-        self.mlp = nn.Linear(embed_dim, 2 * embed_dim)
+        # MLP that turns the time embedding into 3 conditioning parameters
+        self.mlp = nn.Sequential(nn.GELU(), nn.Linear(embed_dim, 3 * embed_dim))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        self._initialise_zero_weights()
+
+    def _initialise_zero_weights(self):
+        nn.init.constant_(self.mlp[-1].weight, 0.0)
+        nn.init.constant_(self.mlp[-1].bias, 0.0)
+
+    def forward(self, x: torch.Tensor, t_embed: torch.Tensor) -> torch.Tensor:
+        # t_embed comes from your TimeEmbedding(x_time)
+        # x shape: (B, T, D), t_embed shape: (B, 1, D)
+
+        cond = self.mlp(t_embed)  # (B, 1, 3*D)
+        alpha, beta, gamma = torch.split(cond, self.embed_dim, dim=-1)
+
         x = self.norm(x)
-        ln = self.mlp(x)
-        gamma, beta = torch.split(ln, self.embed_dim, dim=-1)
-
-        return gamma * x + beta
+        x = x * (1 + gamma) + beta  # Scale and shift
+        x = x * alpha  # Gate the output
+        return x
 
 
 class FlowMatchingPolicy(Policy):
@@ -104,7 +131,6 @@ class FlowMatchingPolicy(Policy):
         action_horizon: int,
         vision_encoder: VisionEncoder,
         num_cameras: int = 1,
-        flowmatching_scale: int = 1000,
         flowmatching_inference_steps: int = 10,
     ):
         super().__init__()
@@ -122,7 +148,6 @@ class FlowMatchingPolicy(Policy):
         self._action_dim = action_dim
         self._action_horizon = action_horizon
 
-        self.flowmatching_scale = flowmatching_scale
         self.flowmatching_inference_steps = flowmatching_inference_steps
 
         # TimeEmbedding (This is generic, no learnable parameters, can be used at all places, timestep is needed)
@@ -228,9 +253,6 @@ class FlowMatchingPolicy(Policy):
 
         x_state = x_state + x_state_time_embed
 
-        # Scale the time embeddings for better activation
-        x_time = x_time * self.flowmatching_scale
-
         # (B,) -> (B, 1) optionally
         if len(x_time.shape) == 1:
             x_time = x_time.unsqueeze(1)
@@ -259,7 +281,7 @@ class FlowMatchingPolicy(Policy):
             x_input_tokens = block(x_noisy_actions, x_cond_tokens, x_time)
 
         # (B, T, embed_dim) -> (B, T, embed_dim)
-        x_out = self.layer_norm(x_input_tokens)
+        x_out = self.layer_norm(x_input_tokens, x_time)
 
         # T = N_obs
         # (B, T, embed_dim) -> (B, N_obs, embed_dim)
