@@ -265,6 +265,7 @@ if __name__ == "__main__":
         action_horizon,
         vision_encoder,
         num_cameras,
+        flowmatching_inference_steps=50,
     ).to(device)
 
     print(f"Running model of size: {policy.num_params()}")

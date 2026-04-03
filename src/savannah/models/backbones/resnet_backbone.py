@@ -21,6 +21,27 @@ class ResNetBackbone(VisionFeatureExtractor):
 
         self.proj = nn.Conv2d(512, out_channels, kernel_size=1)
 
+        self.replace_bn_with_gn(self.backbone)
+
+    def replace_bn_with_gn(self, model, num_groups=32):
+        for name, module in model.named_children():
+            if isinstance(module, nn.BatchNorm2d):
+                # Get the number of channels from the existing BN layer
+                num_channels = module.num_features
+
+                # Ensure num_groups is valid (must divide num_channels)
+                # Fallback to 1 group (LayerNorm style) if 32 doesn't divide evenly
+                actual_groups = num_groups if num_channels % num_groups == 0 else 1
+
+                # Create the new GroupNorm layer
+                gn = nn.GroupNorm(actual_groups, num_channels)
+
+                # Replace the layer in the model
+                setattr(model, name, gn)
+            else:
+                # Recurse through sub-modules (like Sequential or custom Blocks)
+                self.replace_bn_with_gn(module, num_groups)
+
     @property
     def out_channels(self) -> int:
         return self._out_channels
