@@ -21,7 +21,7 @@ class ResNetBackbone(VisionFeatureExtractor):
 
         self.proj = nn.Conv2d(512, out_channels, kernel_size=1)
 
-        self.replace_bn_with_gn(self.backbone)
+        # self.replace_bn_with_gn(self.backbone)
 
     def replace_bn_with_gn(self, model, num_groups=32):
         for name, module in model.named_children():

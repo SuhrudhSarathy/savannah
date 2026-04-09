@@ -91,6 +91,21 @@ class PushTTask(BaseRobotTask):
         action_np = action_tensor.cpu().numpy().reshape(-1)
         return (action_np * 512.0) + 256.0
 
+    def postprocess_chunk(self, action_tensor: torch.Tensor) -> np.ndarray:
+        """
+        Expects action_tensor of shape (N, D) or (1, N, D).
+        Returns a numpy array of shape (N, D) scaled to pixel coordinates.
+        """
+        # Remove batch dimension if present
+        if action_tensor.dim() == 3:
+            action_tensor = action_tensor.squeeze(0)
+
+        action_np = action_tensor.cpu().numpy()
+
+        # Apply your un-normalization logic: (val * 512) + 256
+        # This maps a [-0.5, 0.5] range to [0, 512] pixels
+        return (action_np * 512.0) + 256.0
+
 
 if __name__ == "__main__":
     from savannah.data.dataset import DataSetConfig

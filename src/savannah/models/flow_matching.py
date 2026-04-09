@@ -63,9 +63,17 @@ class FMTransformerBlock(nn.Module):
 
         # 4 AdaLN params — only self attn and ffn are time conditioned
         timestep = self.timestep_mlp(t)
-        alpha1, beta1, gamma1, alpha2, beta2, gamma2, alpha3, beta3, gamma3 = (
-            torch.split(timestep, self.embed_dim, dim=-1)
-        )
+        (
+            alpha1,
+            beta1,
+            gamma1,
+            alpha2,
+            beta2,
+            gamma2,
+            alpha3,
+            beta3,
+            gamma3,
+        ) = torch.split(timestep, self.embed_dim, dim=-1)
 
         # Self attention — action tokens attend to each other, time conditioned
         x1 = self.layer_norm1(x)
