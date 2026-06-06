@@ -1,18 +1,6 @@
-import os
 import sys
 from collections import deque
-from dataclasses import asdict
 
-import gym_pusht
-import gymnasium as gym
-import torch
-
-import wandb
-from savannah.utils.device import get_device
-from savannah.utils.observation import ObservationKey
-from savannah.utils.temporal_ensemble import TemporalEnsembler
-
-# --- 1. Python 3.12 Compatibility Patch ---
 try:
     import imp
 except ImportError:
@@ -22,243 +10,68 @@ except ImportError:
     imp = ModuleType("imp")
     sys.modules["imp"] = imp
 
-# --- 2. Savannah Imports ---
-from savannah.data.dataset import DataSetConfig
-from savannah.models.backbones.resnet_backbone import ResNetBackbone
-from savannah.models.flow_matching import FlowMatchingPolicy
-from savannah.models.vision_encoder import VisionEncoder
+import torch
+import hydra
+from omegaconf import DictConfig
+
+from savannah.models.factory import build_policy, build_task
 from savannah.tasks import RecordedEnv
-from savannah.tasks.pusht import PushTTask
+from savannah.utils.device import get_device
 from savannah.utils.eval_and_log import ActionBuffer
 
 
-def download_artifact(entity, project, run_id, alias="best"):
-    """Downloads the model checkpoint from W&B."""
-
-    api = wandb.Api()
-    artifact_path = f"{entity}/{project}/flow_matching_pusht:{alias}"
-    print(f"Downloading artifact: {artifact_path}")
-    artifact = api.artifact(artifact_path)
-    artifact_dir = artifact.download()
-    return os.path.join(artifact_dir, "best_model.ckpt")
-
-
-def run_live_eval(checkpoint_path, repo_id="lerobot/pusht", video_folder="./videos"):
+@hydra.main(version_base=None, config_path="../configs", config_name="eval")
+def main(cfg: DictConfig) -> None:
     device = get_device()
+    print("Using device:", device)
 
-    embed_dim = 128
-    num_attn_heads = 4
-    num_blocks = 6
-    feedforward_dim = 4 * embed_dim
-    num_cameras = 3
+    task = build_task(cfg, device=device)
+    policy = build_policy(cfg).to(device)
 
-    state_dim = 2
-    action_dim = 2
-    action_horizon = 8
-    obs_horizon = 3
-
-    # 1. Setup Task (The Source of Truth for Shapes/Norms)
-    dataset_config = DataSetConfig(
-        repo_id="lerobot/pusht",
-        fps=10,
-        obs_horizon=obs_horizon,
-        action_horizon=action_horizon,
-        batch_size=1,
-    )
-    task = PushTTask(config=dataset_config, device=device)
-
-    # 2. Reconstruct Model
-    # (Values here must match your training hyperparameters)
-    resnet_backbone = ResNetBackbone(out_channels=96).to(device)
-    vision_encoder = VisionEncoder(backbone=resnet_backbone, embed_dim=embed_dim)
-    policy = FlowMatchingPolicy(
-        embed_dim,
-        num_attn_heads,
-        feedforward_dim,
-        num_blocks,
-        state_dim,
-        action_dim,
-        action_horizon,
-        vision_encoder,
-        num_cameras,
-        flowmatching_inference_steps=100,
-    ).to(device)
-
-    # 3. Load EMA Weights
-    print(f"Loading weights from {checkpoint_path}...")
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    policy.load_state_dict(checkpoint["model_state_dict"])
+    # Load checkpoint
+    print(f"Loading checkpoint: {cfg.checkpoint_path}")
+    checkpoint = torch.load(cfg.checkpoint_path, map_location=device)
+    state_key = "ema_state_dict" if cfg.use_ema else "model_state_dict"
+    policy.load_state_dict(checkpoint[state_key])
     policy.eval()
 
-    # 4. Use Task to get the specific Eval Env
-    base_env = task.get_env(render_mode="rgb_array")
-    env = RecordedEnv(
-        base_env,
-        video_folder=video_folder,
-        name_prefix="flow-matching-eval",
-    )
+    obs_horizon = cfg.task.config.obs_horizon
 
-    # From the gym env raw obs
-    for ep in range(10):
+    base_env = task.get_env(render_mode="rgb_array")
+    env = RecordedEnv(base_env, video_folder=cfg.video_folder, name_prefix="eval")
+
+    successes = 0
+    for ep in range(cfg.num_episodes):
         raw_obs, _ = env.reset()
+        obs_history = deque([raw_obs] * obs_horizon, maxlen=obs_horizon)
+        action_buffer = ActionBuffer(execute_steps=cfg.execute_steps)
         done = False
 
-        # Use our generic ActionBuffer for smooth Receding Horizon Control
-        action_buffer = ActionBuffer(execute_steps=action_horizon)
-
-        obs_history = deque(
-            [raw_obs] * obs_horizon,
-            maxlen=obs_horizon,
-        )
-
-        viz_chunk = None
-        print(f"--- Episode {ep + 1} ---")
+        print(f"--- Episode {ep + 1} / {cfg.num_episodes} ---")
         while not done:
-            # Render for the human eye (handled by gym)
-            # env.render()
-
             if action_buffer.is_empty():
-                # USE THE TASK DIRECTLY: This handles the 255.0 div,
-                # the (pos - 256)/512, and the (1, 1, C, H, W) unsqueezing.
                 obs_dict = task.preprocess_observation_history(obs_history)
-                # print("Len of Observation Key: ", obs_dict[ObservationKey.images][0].shape, obs_dict[ObservationKey.state])
-
                 with torch.no_grad():
                     policy_out = policy.compute_action(obs_dict)
-                    viz_chunk = task.postprocess_chunk(policy_out.actions)
 
+                viz_chunk = task.postprocess_chunk(policy_out.actions)
+                env.set_chunk(viz_chunk)
                 action_buffer.push(policy_out.actions[0])
 
-                # Pop and execute
-            raw_action = action_buffer.pop()
-            # raw_action = policy_out.actions[0][0]
-            # print(raw_action)
-
-            # USE THE TASK DIRECTLY: Un-normalizes [-1, 1] -> [0, 512]
-            raw_action = torch.clamp(raw_action, -1, 1)
-            action_to_apply = task.postprocess_action(raw_action)
-            # print(f"Raw Action: {raw_action}. Action to apply: {action_to_apply}")
-
-            env.set_chunk(viz_chunk)
-            raw_obs, reward, terminated, truncated, info = env.step(action_to_apply)
-
-            obs_history.append(raw_obs)
-            done = terminated or truncated
-        print(f"Result: Terminated: {terminated}; Truncated: {truncated}")
-
-    env.close()
-
-
-def run_live_eval_using_te(
-    checkpoint_path, repo_id="lerobot/pusht", video_folder="./videos"
-):
-    from time import time
-
-    device = get_device()
-
-    embed_dim = 128
-    num_attn_heads = 4
-    num_blocks = 6
-    feedforward_dim = 4 * embed_dim
-    num_cameras = 3
-
-    state_dim = 2
-    action_dim = 2
-    action_horizon = 8
-    obs_horizon = 3
-
-    # 1. Setup Task (The Source of Truth for Shapes/Norms)
-    dataset_config = DataSetConfig(
-        repo_id="lerobot/pusht",
-        fps=10,
-        obs_horizon=obs_horizon,
-        action_horizon=action_horizon,
-        batch_size=1,
-    )
-    task = PushTTask(config=dataset_config, device=device)
-
-    # 2. Reconstruct Model
-    # (Values here must match your training hyperparameters)
-    resnet_backbone = ResNetBackbone(out_channels=96).to(device)
-    vision_encoder = VisionEncoder(backbone=resnet_backbone, embed_dim=embed_dim)
-    policy = FlowMatchingPolicy(
-        embed_dim,
-        num_attn_heads,
-        feedforward_dim,
-        num_blocks,
-        state_dim,
-        action_dim,
-        action_horizon,
-        vision_encoder,
-        num_cameras,
-        flowmatching_inference_steps=50,
-    ).to(device)
-
-    # 3. Load EMA Weights
-    print(f"Loading weights from {checkpoint_path}...")
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    policy.load_state_dict(checkpoint["model_state_dict"])
-
-    # 4. Use Task to get the specific Eval Env
-    base_env = task.get_env(render_mode="rgb_array")
-    env = RecordedEnv(
-        base_env,
-        video_folder=video_folder,
-        name_prefix="flow-matching-eval",
-    )
-
-    torch.compile(policy)
-    policy.eval()
-
-    ensembler = TemporalEnsembler(
-        temporal_ensemble_coeff=0.01, chunk_size=action_horizon
-    )
-
-    # From the gym env raw obs
-    for ep in range(10):
-        raw_obs, _ = env.reset()
-        done = False
-        ensembler.reset()  # CRITICAL: Reset internal state for new episode
-
-        obs_history = deque([raw_obs] * obs_horizon, maxlen=obs_horizon)
-
-        print(f"--- Episode {ep + 1} ---")
-        while not done:
-            # env.render()
-
-            # 1. Preprocess observations
-            obs_dict = task.preprocess_observation_history(obs_history)
-
-            # 2. Predict a FULL chunk of actions every step
-            with torch.no_grad():
-                start = time()
-                policy_out = policy.compute_action(obs_dict)
-                print(f"time taken: {time() - start}")
-
-            # policy_out.actions shape: (batch, chunk_size, action_dim)
-            # 3. Update the ensembler and get the "ensembled" action for THIS time step
-            ensembled_action = ensembler.update(policy_out.actions)
-
-            # 4. Post-process and Step
-            raw_action = torch.clamp(ensembled_action, -1, 1)
+            raw_action = torch.clamp(action_buffer.pop(), -1, 1)
             action_to_apply = task.postprocess_action(raw_action)
 
-            raw_obs, reward, terminated, truncated, info = env.step(action_to_apply)
-
+            raw_obs, _, terminated, truncated, info = env.step(action_to_apply)
             obs_history.append(raw_obs)
             done = terminated or truncated
-        print(f"Result: Terminated: {terminated}; Truncated: {truncated}")
+
+        success = info.get("score", 0) > 0.95
+        successes += int(success)
+        print(f"  {'SUCCESS' if success else 'FAIL'} — score: {info.get('score', 0):.3f}")
 
     env.close()
+    print(f"\nSuccess rate: {successes}/{cfg.num_episodes}")
 
 
 if __name__ == "__main__":
-    # Update these with your W&B details
-    WANDB_ENTITY = "suhrudhsarathy"
-    WANDB_PROJECT = "flow-matching-robotics"
-
-    # ckpt_path = download_artifact(
-    #     WANDB_ENTITY, WANDB_PROJECT, "flow_matching_pusht", alias="v4"
-    # )
-    ckpt_path = "/Users/suhrudh/savannah/scripts/artifacts/flow_matching_pusht:v0/best_model.ckpt"
-    run_live_eval(ckpt_path)
+    main()

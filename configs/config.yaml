@@ -1,0 +1,9 @@
+defaults:
+  - model: flow_matching
+  - task: pusht
+  - trainer: default
+  - _self_
+
+wandb:
+  project: savannah
+  use_wandb: false

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 from pathlib import Path
 
+from hydra.core.config_store import ConfigStore
 from savannah.utils import ObservationKey
 
 
@@ -25,6 +26,10 @@ class DataSetConfig:
     batch_size: int = 8
     num_workers: int = 4
     train_fraction: float = 0.95
+
+
+cs = ConfigStore.instance()
+cs.store(name="dataset_config", node=DataSetConfig)
 
 
 class LerobotDatasetWrapper:

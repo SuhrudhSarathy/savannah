@@ -2,14 +2,13 @@ import copy
 import math
 import os
 from dataclasses import dataclass
-from traceback import format_exc
 
 import torch
-from dill.tests.test_registered import success
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 from tqdm import tqdm
 
+from hydra.core.config_store import ConfigStore
 from savannah.models.policy import Policy
 from savannah.tasks import BaseRobotTask
 from savannah.trainer.ema import EMA
@@ -30,6 +29,10 @@ class TrainConfig:
     eval_execute_steps: int = 8
     ema_decay: float = 0.9999
     checkpoint_dir: str = "checkpoints"
+
+
+cs = ConfigStore.instance()
+cs.store(name="train_config", node=TrainConfig)
 
 
 class PolicyTrainer:
@@ -214,84 +217,3 @@ class PolicyTrainer:
             )
         self.logger.finish()
         print("Training Complete!")
-
-
-if __name__ == "__main__":
-    from dataclasses import asdict
-
-    from savannah.data.dataset import DataSetConfig
-    from savannah.models.backbones.resnet_backbone import ResNetBackbone
-    from savannah.models.flow_matching import FlowMatchingPolicy
-    from savannah.models.vision_encoder import VisionEncoder
-    from savannah.tasks.pusht import PushTTask
-
-    # Bunch of params.
-    # TODO: Get all of these from hydra config
-    embed_dim = 128
-    num_attn_heads = 4
-    num_blocks = 6
-    feedforward_dim = 4 * embed_dim
-    num_cameras = 3
-
-    state_dim = 2
-    action_dim = 2
-    action_horizon = 8
-    obs_horizon = 3
-
-    device = get_device()
-    print("Currently using device:", device)
-
-    dataset_config = DataSetConfig(
-        repo_id="lerobot/pusht",
-        fps=10,
-        obs_horizon=obs_horizon,
-        action_horizon=action_horizon,
-        batch_size=16,
-    )
-
-    # 3. Instantiate Architecture
-    task = PushTTask(config=dataset_config, device=device)
-
-    # Create Polciy
-    resnet_backbone = ResNetBackbone(out_channels=96).to(device)
-    vision_encoder = VisionEncoder(backbone=resnet_backbone, embed_dim=embed_dim)
-    policy = FlowMatchingPolicy(
-        embed_dim,
-        num_attn_heads,
-        feedforward_dim,
-        num_blocks,
-        state_dim,
-        action_dim,
-        action_horizon,
-        vision_encoder,
-        num_cameras,
-        flowmatching_inference_steps=50,
-    ).to(device)
-
-    print(f"Running model of size: {policy.num_params()}")
-
-    # 2. Setup Configs
-    train_config = TrainConfig(
-        training_steps=100_000,
-        eval_freq=2000,  # Evaluate every 5000 steps
-        eval_episodes=1,
-        eval_using_sim=True,
-    )
-
-    logger = ExperimentLogger(
-        project_name="flow-matching-robotics",
-        config={"train": asdict(train_config), "model": "FlowMatching"},
-        use_wandb=True,
-    )
-
-    # 4. Launch Trainer
-    trainer = PolicyTrainer(policy, task, logger, train_config, device)
-
-    try:
-        trainer.train()
-    except Exception as e:
-        print(
-            f"Encountered Exception while Training: {e}. Traceback: \n{'-' * 10}\n{format_exc()}\n{'-' * 10}\n"
-        )
-    finally:
-        print("Done with Training")

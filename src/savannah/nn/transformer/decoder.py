@@ -1,8 +1,9 @@
+from math import sqrt
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-from math import sqrt
 
 from ..cross_attention import CrossAttention
 from ..self_attention import SelfAttention

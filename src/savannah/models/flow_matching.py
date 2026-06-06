@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-from lerobot.processor import PolicyAction
 
 from savannah.models.policy import Policy
 from savannah.models.vision_encoder import VisionEncoder
@@ -12,6 +11,7 @@ from savannah.nn import SelfAttention
 from savannah.nn.cross_attention import CrossAttention
 from savannah.nn.positional_embeddings import SinusoidalPositionalEncoding
 from savannah.nn.time_embedding import TimeEmbedding
+from savannah.objectives import PolicyObjective
 from savannah.utils.device import get_device
 from savannah.utils.observation import ObservationKey
 from savannah.utils.policy import PolicyOutput
@@ -138,8 +138,8 @@ class FlowMatchingPolicy(Policy):
         action_dim: int,
         action_horizon: int,
         vision_encoder: VisionEncoder,
+        objective: PolicyObjective,
         num_cameras: int = 1,
-        flowmatching_inference_steps: int = 10,
     ):
         super().__init__()
 
@@ -156,7 +156,7 @@ class FlowMatchingPolicy(Policy):
         self._action_dim = action_dim
         self._action_horizon = action_horizon
 
-        self.flowmatching_inference_steps = flowmatching_inference_steps
+        self.objective = objective
 
         # TimeEmbedding (This is generic, no learnable parameters, can be used at all places, timestep is needed)
         self.time_embedding = TimeEmbedding(self.embed_dim)
@@ -195,49 +195,6 @@ class FlowMatchingPolicy(Policy):
 
         # Layer Norm
         self.layer_norm = AdaLN(embed_dim)
-
-    def _encode_cameras(self, images: list[torch.Tensor]) -> torch.Tensor:
-        """
-        images: list of (B, N, 3, H, W), one per camera
-        returns: (B, N_cams * N_tokens, embed_dim)
-        """
-        cam_tokens = []
-
-        for cam_idx, img in enumerate(images):
-            # Number of temporal observations
-            n = img.shape[1]
-
-            # Rearrange the image and pass it through the vision encoder to get tokens
-            img_r = rearrange(img, "b n c h w -> (b n) c h w")
-            tokens = self.vision_encoder(img_r)  # (B*T, N_tokens, embed_dim)
-
-            # Rearrange tokens to fallback into the correct temporal order
-            tokens_r = rearrange(tokens, "(b n) t embed_dim -> b n t embed_dim", n=n)
-
-            # Project informal about the obs time to embedding space
-            t = torch.arange(n, device=img.device).unsqueeze(1)  # (N, 1)
-            # (N, 1) -> (N, embed_dim)
-            time_embedding = self.time_embedding(t)
-            # (N, embed_dim) -> (1, N, 1, batch_size)
-            time_embedding = time_embedding.view(1, n, 1, -1)
-
-            # Compute the camera embedding
-            # (1, ) -> (embed_dim,)
-            camera_embedding = self.camera_embedding(
-                torch.tensor(cam_idx, device=img.device)
-            )
-            # (embed_dim, ) -> (1, 1, 1, embed_dim)
-            camera_embedding = camera_embedding.view(1, 1, 1, -1)
-
-            # Adds the vision tokens with the time_embedding and the camera embedding
-            # Final shape = (B, N, T, embed_dim)
-            added_tokens = tokens_r + time_embedding + camera_embedding
-
-            # Flatten spatial and temporal dimensions into a single sequence
-            tokens = rearrange(added_tokens, "b n t embed_dim -> b (n t) embed_dim")
-
-            cam_tokens.append(tokens)
-        return torch.cat(cam_tokens, dim=1)  # (B, N_cams * N_tokens, embed_dim)
 
     def forward(self, obs: dict[str, torch.Tensor], *args, **kwargs) -> PolicyOutput:
         x_img = obs[ObservationKey.images]  # list[(B, M, 3, H, W)]
@@ -301,66 +258,6 @@ class FlowMatchingPolicy(Policy):
         output = PolicyOutput(actions=x_out_action)
 
         return output
-
-    def compute_action(self, obs: dict[str, torch.Tensor]) -> PolicyOutput:
-        with torch.no_grad():
-            B = obs[ObservationKey.state].shape[0]
-            device = obs[ObservationKey.state].device
-
-            # Starting point, pure noise
-            x_t = torch.randn((B, self.action_horizon, self.action_dim), device=device)
-
-            # Simple ODE solver
-            dt = 1.0 / self.flowmatching_inference_steps
-
-            # Run the inference
-            for i in range(self.flowmatching_inference_steps):
-                t_val = i * dt
-
-                t_tensor = torch.full((B,), t_val, device=device)
-
-                obs[ObservationKey.time] = t_tensor
-
-                # Get the predictions from model
-                v_pred = self.forward(obs, noisy_actions=x_t)
-
-                # Integrate the predictions
-                x_t = x_t + v_pred.actions * dt
-
-            return PolicyOutput(actions=x_t)
-
-    def compute_loss(
-        self,
-        obs: dict[str, torch.Tensor],
-    ) -> torch.Tensor:
-        B = obs[ObservationKey.state].shape[0]
-        device = obs[ObservationKey.state].device
-
-        # Get ground truth actions
-        x_1 = obs[ObservationKey.gt_actions]
-
-        # Sample noise like x_1
-        x_0 = torch.randn_like(x_1)
-
-        # Random sample time
-        t = torch.rand((B,), device=device)
-
-        # Get the x_t
-        x_t = (1 - t.view(B, 1, 1)) * x_0 + t.view(B, 1, 1) * x_1
-
-        # Compute target
-        target = x_1 - x_0
-
-        # Populate the Observation with time for model
-        obs[ObservationKey.time] = t
-
-        # Compute the predicted velocity from the model
-        pred_vel = self.forward(obs, noisy_actions=x_t).actions
-
-        # Compute loss
-        loss = F.mse_loss(pred_vel, target)
-
-        return loss
 
 
 if __name__ == "__main__":

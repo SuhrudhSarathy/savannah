@@ -1,0 +1,10 @@
+defaults:
+  - model: flow_matching
+  - task: pusht
+  - _self_
+
+checkpoint_path: ???        # required — pass via CLI: checkpoint_path=path/to/model.ckpt
+use_ema: true               # load ema_state_dict instead of model_state_dict
+num_episodes: 10
+execute_steps: 8            # how many actions to execute per chunk (receding horizon)
+video_folder: ./eval_videos
