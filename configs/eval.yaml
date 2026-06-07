@@ -3,9 +3,9 @@ defaults:
   - task: pusht
   - _self_
 
-checkpoint_path: null       # local checkpoint: pass via CLI: checkpoint_path=path/to/model.ckpt
-wandb_artifact: null        # OR pull from W&B: wandb_artifact=savannah/flow_matching_pusht:best
-use_ema: true               # load ema_state_dict instead of model_state_dict
+checkpoint_path: null # local checkpoint: pass via CLI: checkpoint_path=path/to/model.ckpt
+wandb_artifact: null # OR pull from W&B: wandb_artifact=savannah/flow_matching_pusht:best
+use_ema: false # load ema_state_dict instead of model_state_dict
 num_episodes: 10
-execute_steps: 8            # how many actions to execute per chunk (receding horizon)
+execute_steps: 8 # how many actions to execute per chunk (receding horizon)
 video_folder: ./eval_videos
