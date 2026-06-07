@@ -49,9 +49,13 @@ def main(cfg: DictConfig) -> None:
 
     print(f"\nLoss: {losses[0]:.6f} -> {losses[-1]:.6f}")
     if losses[-1] < cfg.overfit.loss_threshold:
-        print("PASS — model can overfit a real batch. Data pipeline + model wiring looks sound.")
+        print(
+            "PASS — model can overfit a real batch. Data pipeline + model wiring looks sound."
+        )
     else:
-        print("FAIL — loss did not drop below threshold. Inspect the data pipeline/model before training.")
+        print(
+            "FAIL — loss did not drop below threshold. Inspect the data pipeline/model before training."
+        )
 
 
 if __name__ == "__main__":

@@ -83,7 +83,9 @@ def run_dataset_episode_eval(cfg: DictConfig) -> None:
             print(policy_out)
 
         pred_norm = policy_out.actions  # (1, action_horizon, action_dim)
-        gt_norm = formatted[ObservationKey.gt_actions]  # (1, action_horizon, action_dim)
+        gt_norm = formatted[
+            ObservationKey.gt_actions
+        ]  # (1, action_horizon, action_dim)
 
         pred_raw = (pred_norm[0, 0].cpu().numpy() * 512.0) + 256.0
         gt_raw = (gt_norm[0, 0].cpu().numpy() * 512.0) + 256.0

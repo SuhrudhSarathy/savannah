@@ -193,9 +193,7 @@ class PolicyTrainer:
                 if success_rate > self.best_success_rate:
                     self.best_success_rate = success_rate
                     self.save_checkpoint("best_model_success", success_rate)
-                    print(
-                        f"New best model with Success Rate: {self.best_success_rate}"
-                    )
+                    print(f"New best model with Success Rate: {self.best_success_rate}")
 
             self.global_step += 1
             pbar.update(1)

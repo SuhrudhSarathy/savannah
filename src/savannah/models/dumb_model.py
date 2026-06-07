@@ -1,3 +1,4 @@
+from fontTools.merge.layout import first
 from savannah.utils.device import get_device
 from savannah.utils.observation import ObservationKey
 from savannah.utils.policy import PolicyOutput
@@ -8,6 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import AdamW
 
+
 class DumbPolicy(Policy):
     def __init__(self, input_dim: int, output_dim: int, embed_dim: int):
         super().__init__()
@@ -16,7 +18,7 @@ class DumbPolicy(Policy):
             nn.GELU(),
             nn.Linear(embed_dim, embed_dim),
             nn.GELU(),
-            nn.Linear(embed_dim, output_dim)
+            nn.Linear(embed_dim, output_dim),
         )
 
         self._state_dim = 2
@@ -41,16 +43,19 @@ if __name__ == "__main__":
     x_gt = torch.randn(8, 2, 2).to(device)
     input = {ObservationKey.gt_actions: x_gt}
 
-
-
     optimiser = AdamW(policy.parameters(), lr=1e-4)
 
+    first_loss = None
     for i in range(500):
         out = policy(input).actions
         loss = F.mse_loss(out, x_gt)
+
+        if first_loss is None:
+            first_loss = loss
 
         optimiser.zero_grad()
         torch.nn.utils.clip_grad_norm_(policy.parameters(), 1.0)
         loss.backward()
         optimiser.step()
-        print(f"Iter [{i+1}/500]: Loss: {loss.item()}")
+
+    print(f"Iter [{i + 1}/500]: Loss: {first_loss.item()} -> {loss.item()}")

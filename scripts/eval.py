@@ -70,7 +70,9 @@ def main(cfg: DictConfig) -> None:
 
         success = info.get("score", 0) > 0.95
         successes += int(success)
-        print(f"  {'SUCCESS' if success else 'FAIL'} — score: {info.get('score', 0):.3f}")
+        print(
+            f"  {'SUCCESS' if success else 'FAIL'} — score: {info.get('score', 0):.3f}"
+        )
 
     env.close()
     print(f"\nSuccess rate: {successes}/{cfg.num_episodes}")

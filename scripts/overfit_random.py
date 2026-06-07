@@ -36,15 +36,18 @@ def make_random_batch(
     gt_actions = torch.randn(
         batch_size, policy.action_horizon, policy.action_dim, device=device
     )
-    actions = torch.randn_like(gt_actions)
-    time = torch.rand((batch_size, ), device=device)
+    # OverfitObjective feeds `actions` in as the model's conditioning input AND
+    # checks the output against it (an identity-mapping test) — it must be the
+    # same tensor as gt_actions, not independent noise, or there's nothing to learn.
+    actions = gt_actions.clone()
+    time = torch.rand((batch_size,), device=device)
 
     return {
         ObservationKey.images: images,
         ObservationKey.state: state,
         ObservationKey.gt_actions: gt_actions,
         ObservationKey.actions: actions,
-        ObservationKey.time: time
+        ObservationKey.time: time,
     }
 
 
@@ -83,9 +86,13 @@ def main(cfg: DictConfig) -> None:
 
     print(f"\nLoss: {losses[0]:.6f} -> {losses[-1]:.6f}")
     if losses[-1] < cfg.overfit.loss_threshold:
-        print("PASS — model can overfit random data. Architecture/objective wiring looks sound.")
+        print(
+            "PASS — model can overfit random data. Architecture/objective wiring looks sound."
+        )
     else:
-        print("FAIL — loss did not drop below threshold. Inspect the model/objective before training.")
+        print(
+            "FAIL — loss did not drop below threshold. Inspect the model/objective before training."
+        )
 
 
 if __name__ == "__main__":

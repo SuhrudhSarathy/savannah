@@ -12,12 +12,10 @@ class VisionFeatureExtractor(ABC, nn.Module):
 
     @property
     @abstractmethod
-    def out_channels(self) -> int:
-        ...
+    def out_channels(self) -> int: ...
 
     @abstractmethod
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        ...
+    def forward(self, x: torch.Tensor) -> torch.Tensor: ...
 
 
 class DummyVisionBackbone(VisionFeatureExtractor):

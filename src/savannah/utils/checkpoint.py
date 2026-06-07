@@ -13,7 +13,9 @@ def resolve_checkpoint_path(cfg: DictConfig) -> str:
         artifact_dir = artifact.download()
         ckpts = glob.glob(os.path.join(artifact_dir, "*.ckpt"))
         if not ckpts:
-            raise FileNotFoundError(f"No .ckpt file found in artifact dir: {artifact_dir}")
+            raise FileNotFoundError(
+                f"No .ckpt file found in artifact dir: {artifact_dir}"
+            )
         return ckpts[0]
 
     if cfg.checkpoint_path:

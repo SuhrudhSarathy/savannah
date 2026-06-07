@@ -9,8 +9,9 @@ from savannah.utils.policy import PolicyOutput
 
 class Policy(ABC, nn.Module):
     @abstractmethod
-    def forward(self, obs: dict[str, torch.Tensor], *args, **kwargs) -> PolicyOutput:
-        ...
+    def forward(
+        self, obs: dict[str, torch.Tensor], *args, **kwargs
+    ) -> PolicyOutput: ...
 
     def compute_loss(self, obs: dict[str, torch.Tensor]) -> torch.Tensor:
         return self.objective.compute_loss(self, obs)
@@ -36,7 +37,7 @@ class Policy(ABC, nn.Module):
             tokens_r = rearrange(tokens, "(b n) t embed_dim -> b n t embed_dim", n=n)
 
             t = torch.arange(n, device=img.device).unsqueeze(1)  # (N, 1)
-            time_embedding = self.time_embedding(t)               # (N, embed_dim)
+            time_embedding = self.time_embedding(t)  # (N, embed_dim)
             time_embedding = time_embedding.view(1, n, 1, -1)
 
             camera_embedding = self.camera_embedding(
