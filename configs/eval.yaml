@@ -1,7 +1,7 @@
 defaults:
-  - model: flow_matching
-  - task: pusht
-  - _self_
+    - model: dit_block
+    - task: pusht
+    - _self_
 
 checkpoint_path: null # local checkpoint: pass via CLI: checkpoint_path=path/to/model.ckpt
 wandb_artifact: null # OR pull from W&B: wandb_artifact=savannah/flow_matching_pusht:best

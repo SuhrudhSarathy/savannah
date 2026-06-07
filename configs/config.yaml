@@ -1,5 +1,5 @@
 defaults:
-    - model: flow_matching
+    - model: dit_block
     - task: pusht
     - trainer: default
     - _self_

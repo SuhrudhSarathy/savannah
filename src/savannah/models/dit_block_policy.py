@@ -245,7 +245,7 @@ class DiTBlockPolicy(Policy):
 
         x_noisy_actions = x_noisy_actions + x_noisy_actions_time_embed
 
-        x_cond = torch.cat([x_cam_tokens, x_state])
+        x_cond = torch.cat([x_cam_tokens, x_state], dim=1)
 
         encoder_layer_outputs = []
         x_enc_out = x_cond
