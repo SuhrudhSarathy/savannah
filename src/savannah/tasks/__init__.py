@@ -25,25 +25,28 @@ class ActionChunkVisualizer(gym.Wrapper):
 
         # Ensure action_chunk is (horizon, 2)
         actions = self.action_chunk
+        print("[RENDER]: Actions: ", actions)
 
-        # Match the scaling from your source:
-        # (action / 512) * [H, W]
-        # We use np.array([H, W]) to ensure element-wise multiplication matches the source
-        scaled_actions = (actions / 512.0) * np.array([H, W])
-        # Clamp to frame bounds: an undertrained policy can emit huge/NaN
-        # values that overflow the C int cv2.circle expects for 'center'.
-        scaled_actions = np.nan_to_num(scaled_actions, nan=0.0, posinf=0.0, neginf=0.0)
-        scaled_actions = np.clip(scaled_actions, [0, 0], [H - 1, W - 1])
-        scaled_actions = np.round(scaled_actions).astype(int)
+        # # Match the scaling from your source:
+        # # (action / 512) * [H, W]
+        # # We use np.array([H, W]) to ensure element-wise multiplication matches the source
+        # scaled_actions = (actions / 512.0) * np.array([H, W])
+        # # Clamp to frame bounds: an undertrained policy can emit huge/NaN
+        # # values that overflow the C int cv2.circle expects for 'center'.
+        # scaled_actions = np.nan_to_num(scaled_actions, nan=0.0, posinf=0.0, neginf=0.0)
+        # scaled_actions = np.clip(scaled_actions, [0, 0], [H - 1, W - 1])
+        # scaled_actions = np.round(scaled_actions).astype(int)
 
-        num_steps = len(scaled_actions)
+        num_steps = len(actions)
 
         # We iterate backwards just like your source: actions[::-1]
-        for k, action in enumerate(scaled_actions[::-1]):
+        for k, action in enumerate(actions[::-1]):
             # IMPORTANT: The source logic implies action[0] is Y and action[1] is X.
             # OpenCV needs (column, row) which is (X, Y).
             # So we pass (action[1], action[0])
             center = (int(action[0]), int(action[1]))
+
+            print("[RENDER] Action: ", action[0], action[1])
 
             # Color logic matching your source
             color = (

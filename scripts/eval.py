@@ -1,5 +1,3 @@
-import glob
-import os
 import sys
 from collections import deque
 
@@ -14,30 +12,13 @@ except ImportError:
 
 import torch
 import hydra
-import wandb
 from omegaconf import DictConfig
 
 from savannah.models.factory import build_policy, build_task
 from savannah.tasks import RecordedEnv
+from savannah.utils.checkpoint import resolve_checkpoint_path
 from savannah.utils.device import get_device
 from savannah.utils.eval_and_log import ActionBuffer
-
-
-def resolve_checkpoint_path(cfg: DictConfig) -> str:
-    """Resolves the checkpoint to evaluate, downloading it from W&B if requested."""
-    if cfg.wandb_artifact:
-        print(f"Fetching checkpoint from W&B artifact: {cfg.wandb_artifact}")
-        artifact = wandb.Api().artifact(cfg.wandb_artifact, type="model")
-        artifact_dir = artifact.download()
-        ckpts = glob.glob(os.path.join(artifact_dir, "*.ckpt"))
-        if not ckpts:
-            raise FileNotFoundError(f"No .ckpt file found in artifact dir: {artifact_dir}")
-        return ckpts[0]
-
-    if cfg.checkpoint_path:
-        return cfg.checkpoint_path
-
-    raise ValueError("Either checkpoint_path or wandb_artifact must be set")
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="eval")
@@ -81,6 +62,7 @@ def main(cfg: DictConfig) -> None:
 
             raw_action = torch.clamp(action_buffer.pop(), -1, 1)
             action_to_apply = task.postprocess_action(raw_action)
+            print("[EVAL]: Action to apply: ", action_to_apply)
 
             raw_obs, _, terminated, truncated, info = env.step(action_to_apply)
             obs_history.append(raw_obs)

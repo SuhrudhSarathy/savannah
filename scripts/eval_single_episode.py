@@ -1,18 +1,5 @@
-import os
 import sys
-from collections import deque
-from dataclasses import asdict
 
-import gym_pusht
-import gymnasium as gym
-import torch
-import numpy as np
-
-import wandb
-from savannah.utils.device import get_device
-from savannah.utils.observation import ObservationKey
-
-# --- Python 3.12 Compatibility Patch ---
 try:
     import imp
 except ImportError:
@@ -22,67 +9,38 @@ except ImportError:
     imp = ModuleType("imp")
     sys.modules["imp"] = imp
 
-from savannah.data.dataset import DataSetConfig
-from savannah.models.backbones.resnet_backbone import ResNetBackbone
-from savannah.models.flow_matching import FlowMatchingPolicy
-from savannah.models.vision_encoder import VisionEncoder
-from savannah.tasks.pusht import PushTTask
-
-
-def load_policy(checkpoint_path, device):
-    embed_dim = 128
-    num_attn_heads = 4
-    num_blocks = 6
-    feedforward_dim = 4 * embed_dim
-    num_cameras = 3
-    state_dim = 2
-    action_dim = 2
-    action_horizon = 8
-    obs_horizon = 3
-
-    resnet_backbone = ResNetBackbone(out_channels=96).to(device)
-    vision_encoder = VisionEncoder(backbone=resnet_backbone, embed_dim=embed_dim)
-    policy = FlowMatchingPolicy(
-        embed_dim,
-        num_attn_heads,
-        feedforward_dim,
-        num_blocks,
-        state_dim,
-        action_dim,
-        action_horizon,
-        vision_encoder,
-        num_cameras,
-        flowmatching_inference_steps=100,
-    ).to(device)
-
-    print(f"Loading weights from {checkpoint_path}...")
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    policy.load_state_dict(checkpoint["model_state_dict"])
-    policy.eval()
-    return policy
-
+import hydra
+import numpy as np
+import torch
+from omegaconf import DictConfig
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from savannah.utils import ObservationKey
+
+from savannah.models.factory import build_policy, build_task
+from savannah.utils.checkpoint import resolve_checkpoint_path
+from savannah.utils.device import get_device
+from savannah.utils.observation import ObservationKey
 
 
-def run_dataset_episode_eval(checkpoint_path):
+def run_dataset_episode_eval(cfg: DictConfig) -> None:
     device = get_device()
-    obs_horizon = 3
-    action_horizon = 8
+    print("Using device:", device)
 
-    dataset_config = DataSetConfig(
-        repo_id="lerobot/pusht",
-        fps=10,
-        obs_horizon=obs_horizon,
-        action_horizon=action_horizon,
-        batch_size=1,
-        cameras=["image"],
-    )
-    task = PushTTask(config=dataset_config, device=device)
-    policy = load_policy(checkpoint_path, device)
+    task = build_task(cfg, device=device)
+    policy = build_policy(cfg).to(device)
 
-    # Build delta_timestamps the same way your LerobotDatasetWrapper does
+    checkpoint_path = resolve_checkpoint_path(cfg)
+    print(f"Loading checkpoint: {checkpoint_path}")
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    state_key = "ema_state_dict" if cfg.use_ema else "model_state_dict"
+    policy.load_state_dict(checkpoint[state_key])
+    policy.eval()
+
+    dataset_config = task.config
+    obs_horizon = dataset_config.obs_horizon
+    action_horizon = dataset_config.action_horizon
+
+    # Build delta_timestamps the same way LerobotDatasetWrapper does
     obs_timestamps = [
         -(obs_horizon - 1 - i) / dataset_config.fps for i in range(obs_horizon)
     ]
@@ -94,10 +52,11 @@ def run_dataset_episode_eval(checkpoint_path):
         "action": act_timestamps,
     }
 
-    full_dataset = LeRobotDataset("lerobot/pusht", delta_timestamps=delta_timestamps)
+    full_dataset = LeRobotDataset(
+        dataset_config.repo_id, delta_timestamps=delta_timestamps
+    )
 
-    # Pick an episode
-    target_episode = 0
+    target_episode = cfg.episode_index
     episode_indices = full_dataset.hf_dataset["episode_index"]
     frame_indices = [i for i, ep in enumerate(episode_indices) if ep == target_episode]
     print(f"Episode {target_episode}: {len(frame_indices)} steps")
@@ -121,9 +80,10 @@ def run_dataset_episode_eval(checkpoint_path):
 
         with torch.no_grad():
             policy_out = policy.compute_action(formatted)
+            print(policy_out)
 
-        pred_norm = policy_out.actions  # (1, action_horizon, 2)
-        gt_norm = formatted[ObservationKey.gt_actions]  # (1, action_horizon, 2)
+        pred_norm = policy_out.actions  # (1, action_horizon, action_dim)
+        gt_norm = formatted[ObservationKey.gt_actions]  # (1, action_horizon, action_dim)
 
         pred_raw = (pred_norm[0, 0].cpu().numpy() * 512.0) + 256.0
         gt_raw = (gt_norm[0, 0].cpu().numpy() * 512.0) + 256.0
@@ -145,6 +105,10 @@ def run_dataset_episode_eval(checkpoint_path):
     )
 
 
+@hydra.main(version_base=None, config_path="../configs", config_name="eval")
+def main(cfg: DictConfig) -> None:
+    run_dataset_episode_eval(cfg)
+
+
 if __name__ == "__main__":
-    ckpt_path = "/Users/suhrudh/savannah/scripts/artifacts/flow_matching_pusht:v0/best_model.ckpt"
-    run_dataset_episode_eval(ckpt_path)
+    main()
