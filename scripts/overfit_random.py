@@ -36,11 +36,15 @@ def make_random_batch(
     gt_actions = torch.randn(
         batch_size, policy.action_horizon, policy.action_dim, device=device
     )
+    actions = torch.randn_like(gt_actions)
+    time = torch.rand((batch_size, ), device=device)
 
     return {
         ObservationKey.images: images,
         ObservationKey.state: state,
         ObservationKey.gt_actions: gt_actions,
+        ObservationKey.actions: actions,
+        ObservationKey.time: time
     }
 
 

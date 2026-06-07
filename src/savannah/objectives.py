@@ -21,6 +21,23 @@ class PolicyObjective(ABC):
     def compute_action(self, model, obs: dict) -> PolicyOutput: ...
 
 
+class OverfitObjective(PolicyObjective):
+    def __init__(self):
+        super().__init__()
+
+    def compute_loss(self, model, obs: dict) -> torch.Tensor:
+        """The assumption is that obs is fully defined, no need to manipulate this at all"""
+        x_t = obs[ObservationKey.actions]
+        out = model.forward(obs, noisy_actions=x_t).actions
+        loss = F.mse_loss(out, x_t)
+        return loss
+
+    def compute_action(self, model, obs: dict) -> PolicyOutput:
+        x_t = obs[ObservationKey.actions]
+        out = model.forward(obs, noisy_actions=x_t).actions
+
+        return PolicyOutput(actions=out)
+
 class FlowMatchingObjective(PolicyObjective):
     def __init__(self, inference_steps: int = 10):
         self.inference_steps = inference_steps
