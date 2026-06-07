@@ -4,11 +4,11 @@ import os
 from dataclasses import dataclass
 
 import torch
+from hydra.core.config_store import ConfigStore
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 from tqdm import tqdm
 
-from hydra.core.config_store import ConfigStore
 from savannah.models.policy import Policy
 from savannah.tasks import BaseRobotTask
 from savannah.trainer.ema import EMA
@@ -29,6 +29,7 @@ class TrainConfig:
     eval_execute_steps: int = 8
     ema_decay: float = 0.9999
     checkpoint_dir: str = "checkpoints"
+    artifact_name: str = "model"
 
 
 cs = ConfigStore.instance()
@@ -200,19 +201,19 @@ class PolicyTrainer:
         if os.path.exists(best_model_path):
             self.logger.log_model_artifact(
                 model_path=best_model_path,
-                artifact_name=f"flow_matching_pusht",
+                artifact_name=self.config.artifact_name,
                 aliases=["best"],
             )
             self.logger.log_model_artifact(
                 model_path=best_model_success_path,
-                artifact_name=f"flow_matching_pusht",
+                artifact_name=self.config.artifact_name,
                 aliases=["best_success"],
             )
         if os.path.exists(latest_model_path):
             # Fallback in case we never beat the initial validation score
             self.logger.log_model_artifact(
                 model_path=latest_model_path,
-                artifact_name=f"flow_matching_pusht",
+                artifact_name=self.config.artifact_name,
                 aliases=["latest"],
             )
         self.logger.finish()

@@ -253,7 +253,7 @@ class DiTBlockPolicy(Policy):
             x_enc_out = enc(x_enc_out)
             encoder_layer_outputs.append(x_enc_out)
 
-        x_out = x
+        x_out = x_noisy_actions
         for i, dec in enumerate(self.decoders):
             # (B, TC, embed_dim) -> (B, 1, embed_dim)
             x_enc_out = encoder_layer_outputs[i]

@@ -37,7 +37,8 @@ class FlowMatchingObjective(PolicyObjective):
 
         obs[ObservationKey.time] = t
         pred_vel = model.forward(obs, noisy_actions=x_t).actions
-        return F.mse_loss(pred_vel, target)
+        loss = F.mse_loss(pred_vel, target)
+        return loss
 
     def compute_action(self, model, obs: dict) -> PolicyOutput:
         with torch.no_grad():

@@ -7,3 +7,4 @@ eval_episodes: 5
 eval_execute_steps: 8
 ema_decay: 0.9999
 checkpoint_dir: checkpoints
+artifact_name: dit_block_pusht
