@@ -25,6 +25,7 @@ class TrainConfig:
     warmup_steps: int = 1000
     eval_freq: int = 5000
     eval_using_sim: bool = False
+    sim_eval_freq: int = 5000
     eval_episodes: int = 5
     eval_execute_steps: int = 8
     ema_decay: float = 0.9999
@@ -162,30 +163,39 @@ class PolicyTrainer:
                     self.save_checkpoint("best_model", avg_val_loss)
                     print(f"New best model with Val loss: {self.best_val_loss}")
 
-                if self.config.eval_using_sim:
-                    success_rate, mean_reward = evaluate_and_log(
-                        policy=self.ema.shadow,
-                        task=self.task,
-                        logger=self.logger,
-                        step=self.global_step,
-                        num_episodes=self.config.eval_episodes,
-                        execute_steps=self.config.eval_execute_steps,
-                    )
+            # 8. Live sim eval & video upload (own cadence — typically much rarer
+            # than the val-loss check above, since it rolls out full episodes)
+            if (
+                self.config.eval_using_sim
+                and self.global_step > 0
+                and self.global_step % self.config.sim_eval_freq == 0
+            ):
+                print(
+                    f"\n----------- Live sim eval at Step {self.global_step} -------------"
+                )
+                success_rate, mean_reward = evaluate_and_log(
+                    policy=self.ema.shadow,
+                    task=self.task,
+                    logger=self.logger,
+                    step=self.global_step,
+                    num_episodes=self.config.eval_episodes,
+                    execute_steps=self.config.eval_execute_steps,
+                )
 
-                    self.logger.log_scalars(
-                        {
-                            "val/success_rate": success_rate,
-                            "val/mean_reward": mean_reward,
-                        },
-                        step=self.global_step,
-                    )
+                self.logger.log_scalars(
+                    {
+                        "val/success_rate": success_rate,
+                        "val/mean_reward": mean_reward,
+                    },
+                    step=self.global_step,
+                )
 
-                    if success_rate > self.best_success_rate:
-                        self.best_success_rate = success_rate
-                        self.save_checkpoint("best_model_success", success_rate)
-                        print(
-                            f"New best model with Success Rate: {self.best_success_rate}"
-                        )
+                if success_rate > self.best_success_rate:
+                    self.best_success_rate = success_rate
+                    self.save_checkpoint("best_model_success", success_rate)
+                    print(
+                        f"New best model with Success Rate: {self.best_success_rate}"
+                    )
 
             self.global_step += 1
             pbar.update(1)
