@@ -30,6 +30,10 @@ class ActionChunkVisualizer(gym.Wrapper):
         # (action / 512) * [H, W]
         # We use np.array([H, W]) to ensure element-wise multiplication matches the source
         scaled_actions = (actions / 512.0) * np.array([H, W])
+        # Clamp to frame bounds: an undertrained policy can emit huge/NaN
+        # values that overflow the C int cv2.circle expects for 'center'.
+        scaled_actions = np.nan_to_num(scaled_actions, nan=0.0, posinf=0.0, neginf=0.0)
+        scaled_actions = np.clip(scaled_actions, [0, 0], [H - 1, W - 1])
         scaled_actions = np.round(scaled_actions).astype(int)
 
         num_steps = len(scaled_actions)

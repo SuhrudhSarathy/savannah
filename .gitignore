@@ -3,7 +3,7 @@
 runs/
 wandb/
 checkpoints/
-videos/
+*videos*/
 *.egg-info
 *artifacts
 outputs/

@@ -1,3 +1,5 @@
+import glob
+import os
 import sys
 from collections import deque
 
@@ -12,12 +14,30 @@ except ImportError:
 
 import torch
 import hydra
+import wandb
 from omegaconf import DictConfig
 
 from savannah.models.factory import build_policy, build_task
 from savannah.tasks import RecordedEnv
 from savannah.utils.device import get_device
 from savannah.utils.eval_and_log import ActionBuffer
+
+
+def resolve_checkpoint_path(cfg: DictConfig) -> str:
+    """Resolves the checkpoint to evaluate, downloading it from W&B if requested."""
+    if cfg.wandb_artifact:
+        print(f"Fetching checkpoint from W&B artifact: {cfg.wandb_artifact}")
+        artifact = wandb.Api().artifact(cfg.wandb_artifact, type="model")
+        artifact_dir = artifact.download()
+        ckpts = glob.glob(os.path.join(artifact_dir, "*.ckpt"))
+        if not ckpts:
+            raise FileNotFoundError(f"No .ckpt file found in artifact dir: {artifact_dir}")
+        return ckpts[0]
+
+    if cfg.checkpoint_path:
+        return cfg.checkpoint_path
+
+    raise ValueError("Either checkpoint_path or wandb_artifact must be set")
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="eval")
@@ -29,8 +49,9 @@ def main(cfg: DictConfig) -> None:
     policy = build_policy(cfg).to(device)
 
     # Load checkpoint
-    print(f"Loading checkpoint: {cfg.checkpoint_path}")
-    checkpoint = torch.load(cfg.checkpoint_path, map_location=device)
+    checkpoint_path = resolve_checkpoint_path(cfg)
+    print(f"Loading checkpoint: {checkpoint_path}")
+    checkpoint = torch.load(checkpoint_path, map_location=device)
     state_key = "ema_state_dict" if cfg.use_ema else "model_state_dict"
     policy.load_state_dict(checkpoint[state_key])
     policy.eval()
