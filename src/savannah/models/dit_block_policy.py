@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 from savannah.models.policy import Policy
 from savannah.models.vision_encoder import VisionEncoder
+from savannah.nn.positional_embeddings import get_sinusoidal_position_embedding
 from savannah.nn.self_attention import SelfAttention
 from savannah.nn.time_embedding import TimeEmbedding
 from savannah.objectives import PolicyObjective
@@ -81,7 +82,7 @@ class DecoderBlock(nn.Module):
 
         self.dropout_layer = nn.Dropout(self.dropout)
 
-        self.adaln_block = nn.Linear(self.embed_dim, 6 * self.embed_dim)
+        self.adaln_block = nn.Linear(2 * self.embed_dim, 6 * self.embed_dim)
 
     def _init_adaln_zero(self):
         """Initializes the alpha scaling projections to 0 so the network
@@ -92,7 +93,7 @@ class DecoderBlock(nn.Module):
         nn.init.constant_(self.adaln_block.bias, 0.0)
 
     def forward(self, x: torch.Tensor, kv: torch.Tensor) -> torch.Tensor:
-        # KV is essentially mean of tokens from encoder + Timestep
+        # KV is essentially mean of tokens from cat of encoder and Timestep
         # x: is the tokens that are input to the decoder
 
         # AdaLN stuff
@@ -188,6 +189,11 @@ class DiTBlockPolicy(Policy):
             nn.Linear(self.embed_dim, self.embed_dim),
         )
 
+        sinusoidal_position_embeddings = get_sinusoidal_position_embedding(
+            self._action_horizon, self.embed_dim
+        )
+        self.action_time_embedding = nn.Parameter(sinusoidal_position_embeddings)
+
         # Action Embedding
         self.action_embedding = nn.Sequential(
             nn.Linear(self._action_dim, self.embed_dim),
@@ -236,14 +242,7 @@ class DiTBlockPolicy(Policy):
         # (B, N_obs, action_dim) -> (B, N_obs, embed_dim)
         x_noisy_actions = self.action_embedding(noisy_actions)
 
-        # Add time embeddings for noisy_actions
-        x_noisy_actions_time_embed = self.time_embedding(
-            torch.arange(
-                x_noisy_actions.shape[1], device=x_noisy_actions.device
-            ).unsqueeze(1)
-        )
-
-        x_noisy_actions = x_noisy_actions + x_noisy_actions_time_embed
+        x_noisy_actions = x_noisy_actions + self.action_time_embedding
 
         x_cond = torch.cat([x_cam_tokens, x_state], dim=1)
 
@@ -258,7 +257,7 @@ class DiTBlockPolicy(Policy):
             # (B, TC, embed_dim) -> (B, 1, embed_dim)
             x_enc_out = encoder_layer_outputs[i]
             x_enc_mean = torch.mean(x_enc_out, dim=1, keepdim=True)
-            x_kv = x_enc_mean + x_time
+            x_kv = torch.cat([x_enc_mean, x_time], dim=-1)
 
             x_out = dec(x_out, x_kv)
 

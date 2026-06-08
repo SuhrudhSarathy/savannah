@@ -6,6 +6,6 @@ config:
   cameras: []
   obs_horizon: 3
   action_horizon: ${model.action_horizon}
-  batch_size: 2
+  batch_size: 16
   num_workers: 4
   train_fraction: 0.95

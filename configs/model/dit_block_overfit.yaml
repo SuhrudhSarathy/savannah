@@ -12,10 +12,15 @@ action_dim: 2
 action_horizon: 8
 num_cameras: 1
 objective:
-    _target_: savannah.objectives.OverfitObjective
+  _target_: savannah.objectives.DDIMObjective
+  num_train_timesteps: 100
+  num_inference_steps: 10
+  beta_start: 1e-4
+  beta_end: 0.02
+  clip_sample: True
 vision_encoder:
-    _target_: savannah.models.vision_encoder.VisionEncoder
-    embed_dim: ${model.embed_dim}
-    backbone:
-        _target_: savannah.models.backbones.resnet_backbone.ResNetBackbone
-        out_channels: 96
+  _target_: savannah.models.vision_encoder.VisionEncoder
+  embed_dim: ${model.embed_dim}
+  backbone:
+    _target_: savannah.models.backbones.resnet_backbone.ResNetBackbone
+    out_channels: 96

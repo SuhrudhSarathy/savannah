@@ -12,9 +12,8 @@ except ImportError:
 import hydra
 import numpy as np
 import torch
-from omegaconf import DictConfig
-
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from omegaconf import DictConfig
 
 from savannah.models.factory import build_policy, build_task
 from savannah.utils.checkpoint import resolve_checkpoint_path
@@ -77,6 +76,19 @@ def run_dataset_episode_eval(cfg: DictConfig) -> None:
         }
 
         formatted = task.format_batch(batch)
+
+        # return {
+        #     ObservationKey.images: [images],
+        #     ObservationKey.state: (state - 256.0) / 512.0,
+        #     ObservationKey.gt_actions: (actions - 256.0) / 512.0,
+        # }
+
+        # Both the images and the states are noise now
+        images = [torch.zeros_like(img) for img in formatted[ObservationKey.images]]
+        formatted[ObservationKey.images] = images
+        formatted[ObservationKey.state] = torch.rand_like(
+            formatted[ObservationKey.state]
+        )
 
         with torch.no_grad():
             policy_out = policy.compute_action(formatted)

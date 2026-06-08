@@ -1928,6 +1928,7 @@ name = "savannah"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "diffusers" },
     { name = "einops" },
     { name = "gym-pusht" },
     { name = "hydra-core" },
@@ -1952,6 +1953,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "diffusers" },
     { name = "einops" },
     { name = "gym-pusht" },
     { name = "hydra-core" },

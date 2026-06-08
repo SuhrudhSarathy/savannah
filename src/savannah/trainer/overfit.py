@@ -1,7 +1,9 @@
 import torch
+import torch.nn.functional as F
 from tqdm import tqdm
 
 from savannah.models.policy import Policy
+from savannah.utils.observation import ObservationKey
 
 
 def overfit_on_batch(
@@ -40,3 +42,21 @@ def overfit_on_batch(
             pbar.set_postfix(loss=f"{loss_value:.6f}")
 
     return losses
+
+
+@torch.no_grad()
+def validate_action_reconstruction(policy: Policy, batch: dict) -> float:
+    """
+    Val loop for an overfit run: samples actions for `batch` via
+    `policy.compute_action` (the objective's sampler — DDIM reverse diffusion,
+    flow-matching ODE integration, ...) and measures MSE against the ground
+    truth actions the model was overfit on.
+
+    A low training loss only proves the network learned to predict whatever
+    compute_loss's target is (noise, velocity, ...) — this checks that the
+    sampler actually turns those predictions back into the right actions.
+    """
+    policy.eval()
+    pred = policy.compute_action(batch).actions
+    target = batch[ObservationKey.gt_actions]
+    return F.mse_loss(pred, target).item()

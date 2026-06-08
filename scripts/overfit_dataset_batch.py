@@ -13,7 +13,7 @@ import hydra
 from omegaconf import DictConfig
 
 from savannah.models.factory import build_policy, build_task
-from savannah.trainer.overfit import overfit_on_batch
+from savannah.trainer.overfit import overfit_on_batch, validate_action_reconstruction
 from savannah.utils.device import get_device
 
 
@@ -55,6 +55,19 @@ def main(cfg: DictConfig) -> None:
     else:
         print(
             "FAIL — loss did not drop below threshold. Inspect the data pipeline/model before training."
+        )
+
+    print("\nVal loop: sampling actions via compute_action and comparing to ground truth...")
+    action_mse = validate_action_reconstruction(policy, batch)
+    print(f"Action reconstruction MSE: {action_mse:.6f}")
+    if action_mse < cfg.overfit.action_mse_threshold:
+        print(
+            "PASS — sampler reconstructs the overfit batch's actions. Objective's compute_action loop looks sound."
+        )
+    else:
+        print(
+            "FAIL — compute_action did not reconstruct ground-truth actions. "
+            "Inspect the sampler (scheduler config, prediction_type, step loop)."
         )
 
 

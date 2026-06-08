@@ -127,6 +127,8 @@ class DDIMObjective(PolicyObjective):
                     (B,), float(t.item()), device=device
                 )
                 model_output = model.forward(obs, noisy_actions=x_t).actions
+                print("[OBJECTIVES] Model output: ", model_output)
                 x_t = self.scheduler.step(model_output, t, x_t).prev_sample
+                print("[OBJECTIVES] X_t: ", x_t)
 
             return PolicyOutput(actions=x_t)

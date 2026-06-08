@@ -1,9 +1,30 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import rearrange, repeat
 
-from einops import repeat, rearrange
-import math
+
+def get_sinusoidal_position_embedding(horizon: int, embed_dim: int) -> torch.Tensor:
+    """
+    Generates standard sinusoidal positional embeddings.
+    Returns a tensor of shape (1, horizon, embed_dim).
+    """
+    pe = torch.zeros(horizon, embed_dim)
+    position = torch.arange(0, horizon, dtype=torch.float).unsqueeze(1)
+
+    # Calculate the frequency division term
+    div_term = torch.exp(
+        torch.arange(0, embed_dim, 2).float() * (-math.log(10000.0) / embed_dim)
+    )
+
+    # Apply sine to even indices, cosine to odd indices
+    pe[:, 0::2] = torch.sin(position * div_term)
+    pe[:, 1::2] = torch.cos(position * div_term)
+
+    # Add a batch dimension so it broadcasts easily later
+    return pe.unsqueeze(0)
 
 
 class SinusoidalPositionalEncoding(nn.Module):
