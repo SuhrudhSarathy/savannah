@@ -4,11 +4,13 @@ import os
 import wandb
 from omegaconf import DictConfig
 
+from savannah.utils.log import logger
+
 
 def resolve_checkpoint_path(cfg: DictConfig) -> str:
     """Resolves the checkpoint to evaluate, downloading it from W&B if requested."""
     if cfg.wandb_artifact:
-        print(f"Fetching checkpoint from W&B artifact: {cfg.wandb_artifact}")
+        logger.info("Fetching checkpoint from W&B artifact: {}", cfg.wandb_artifact)
         artifact = wandb.Api().artifact(cfg.wandb_artifact, type="model")
         artifact_dir = artifact.download()
         ckpts = glob.glob(os.path.join(artifact_dir, "*.ckpt"))

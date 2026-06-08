@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 
 from .base import BaseRobotTask
+from savannah.utils.log import logger
 
 
 class ActionChunkVisualizer(gym.Wrapper):
@@ -25,7 +26,7 @@ class ActionChunkVisualizer(gym.Wrapper):
 
         # Ensure action_chunk is (horizon, 2)
         actions = self.action_chunk
-        print("[RENDER]: Actions: ", actions)
+        logger.debug("render: action_chunk={}", actions)
 
         # # Match the scaling from your source:
         # # (action / 512) * [H, W]
@@ -46,7 +47,7 @@ class ActionChunkVisualizer(gym.Wrapper):
             # So we pass (action[1], action[0])
             center = (int(action[0]), int(action[1]))
 
-            print("[RENDER] Action: ", action[0], action[1])
+            logger.debug("render: action=({}, {})", action[0], action[1])
 
             # Color logic matching your source
             color = (

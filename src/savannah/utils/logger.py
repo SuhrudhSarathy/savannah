@@ -1,6 +1,8 @@
-import wandb
 import numpy as np
+import wandb
 from typing import Dict, Any, Optional
+
+from savannah.utils.log import logger
 
 
 class ExperimentLogger:
@@ -16,26 +18,19 @@ class ExperimentLogger:
         if self.use_wandb:
             wandb.init(project=project_name, name=run_name, config=config)
         else:
-            print("Running without W&B logging (Debug Mode).")
+            logger.info("W&B disabled — running in local-only mode.")
 
     def log_scalars(self, metrics: Dict[str, float], step: int):
-        """Logs standard numbers (loss, lr, success rate)."""
         if self.use_wandb:
-            # Inject the step into the dictionary so W&B aligns everything
             metrics["global_step"] = step
             wandb.log(metrics)
         else:
-            # In debug mode, just print the most important metrics
-            loss = metrics.get("train/total_loss", "N/A")
-            print(f"[Step {step}] Loss: {loss}")
+            loss = metrics.get("train/loss", metrics.get("train/total_loss", "N/A"))
+            logger.info("[step {}] loss={}", step, loss)
 
     def log_video(
         self, video_array: np.ndarray, metric_name: str, step: int, fps: int = 10
     ):
-        """
-        Safely formats and logs a video.
-        Expected video_array shape: (T, C, H, W)
-        """
         if self.use_wandb:
             try:
                 wandb.log(
@@ -45,36 +40,32 @@ class ExperimentLogger:
                     }
                 )
             except Exception as e:
-                print(f"Failed to log video to W&B: {e}")
+                logger.warning("Failed to log video '{}' to W&B: {}", metric_name, e)
         else:
-            print(
-                f"[Step {step}] 🎬 Video generated for {metric_name} (Shape: {video_array.shape})"
+            logger.debug(
+                "[step {}] video generated for {} (shape={})",
+                step,
+                metric_name,
+                video_array.shape,
             )
 
     def log_model_artifact(
         self, model_path: str, artifact_name: str, aliases: list[str] | None = None
     ):
-        """
-        Uploads a saved checkpoint file to W&B as an artifact.
-        """
         if self.use_wandb:
-            print(f"Uploading {model_path} to W&B Artifacts...")
+            logger.info(
+                "Uploading {} to W&B artifacts as '{}'…", model_path, artifact_name
+            )
             try:
-                # 1. Initialize the Artifact object
                 artifact = wandb.Artifact(name=artifact_name, type="model")
-
-                # 2. Attach the local file
                 artifact.add_file(model_path)
-
-                # 3. Upload to the cloud
                 wandb.log_artifact(artifact, aliases=aliases)
-                print(f"Successfully uploaded {artifact_name}!")
+                logger.success("Artifact '{}' uploaded successfully.", artifact_name)
             except Exception as e:
-                print(f"Failed to upload model artifact: {e}")
+                logger.error("Failed to upload artifact '{}': {}", artifact_name, e)
         else:
-            print(f"Debug mode active. Skipping artifact upload for {model_path}")
+            logger.debug("W&B disabled — skipping artifact upload for {}", model_path)
 
     def finish(self):
-        """Cleanly closes the logger."""
         if self.use_wandb:
             wandb.finish()

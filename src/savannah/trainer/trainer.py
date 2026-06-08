@@ -15,6 +15,7 @@ from savannah.trainer.ema import EMA
 from savannah.trainer.scheduler import get_custom_scheduler
 from savannah.utils.device import get_device
 from savannah.utils.eval_and_log import evaluate_and_log
+from savannah.utils.log import logger
 from savannah.utils.logger import ExperimentLogger
 from savannah.utils.observation import ObservationKey
 
@@ -89,7 +90,7 @@ class PolicyTrainer:
         torch.save(checkpoint, path)
 
     def train(self):
-        print(f"Starting training for {self.config.training_steps} steps...")
+        logger.info("Starting training for {} steps…", self.config.training_steps)
 
         train_loader = self.task.get_train_loader()
         train_iter = iter(train_loader)
@@ -153,13 +154,11 @@ class PolicyTrainer:
 
             # 7. Evaluation & Checkpointing
             if self.global_step > 0 and self.global_step % self.config.eval_freq == 0:
-                print(
-                    f"\n----------- Validating at Step {self.global_step} -------------"
-                )
+                logger.info("── Validating at step {} ──", self.global_step)
                 val_losses = []
                 with torch.no_grad():
                     for batch in tqdm(val_loader):
-                        batch = self.task.format_batch(raw_batch)
+                        batch = self.task.format_batch(batch)
                         loss = self.policy.compute_loss(batch)
 
                         val_losses.append(loss.item())
@@ -174,7 +173,7 @@ class PolicyTrainer:
                 if avg_val_loss < self.best_val_loss:
                     self.best_val_loss = avg_val_loss
                     self.save_checkpoint("best_model", avg_val_loss)
-                    print(f"New best model with Val loss: {self.best_val_loss}")
+                    logger.success("New best val loss: {:.6f}", self.best_val_loss)
 
             # 8. Live sim eval & video upload (own cadence — typically much rarer
             # than the val-loss check above, since it rolls out full episodes)
@@ -183,9 +182,7 @@ class PolicyTrainer:
                 and self.global_step > 0
                 and self.global_step % self.config.sim_eval_freq == 0
             ):
-                print(
-                    f"\n----------- Live sim eval at Step {self.global_step} -------------"
-                )
+                logger.info("── Live sim eval at step {} ──", self.global_step)
                 success_rate, mean_reward = evaluate_and_log(
                     policy=self.ema.shadow,
                     task=self.task,
@@ -206,7 +203,9 @@ class PolicyTrainer:
                 if success_rate > self.best_success_rate:
                     self.best_success_rate = success_rate
                     self.save_checkpoint("best_model_success", success_rate)
-                    print(f"New best model with Success Rate: {self.best_success_rate}")
+                    logger.success(
+                        "New best success rate: {:.3f}", self.best_success_rate
+                    )
 
             self.global_step += 1
             pbar.update(1)

@@ -57,7 +57,9 @@ def main(cfg: DictConfig) -> None:
             "FAIL — loss did not drop below threshold. Inspect the data pipeline/model before training."
         )
 
-    print("\nVal loop: sampling actions via compute_action and comparing to ground truth...")
+    print(
+        "\nVal loop: sampling actions via compute_action and comparing to ground truth..."
+    )
     action_mse = validate_action_reconstruction(policy, batch)
     print(f"Action reconstruction MSE: {action_mse:.6f}")
     if action_mse < cfg.overfit.action_mse_threshold:

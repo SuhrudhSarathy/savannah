@@ -22,7 +22,8 @@ dependencies = [
     "lerobot",
     "metaworld",
     "gym-pusht",
-    "pymunk==6.11.1"
+    "pymunk==6.11.1",
+    "loguru",
 ]
 
 [project.optional-dependencies]

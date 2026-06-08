@@ -4,10 +4,20 @@ from savannah.utils.device import get_device
 from savannah.data.dataset import DataSetConfig, LerobotDatasetWrapper
 
 
+OBS_HORIZON = 3
+ACTION_HORIZON = 8
+
+
 @pytest.fixture(scope="module")
 def loaders():
     """Shared across tests in this module — avoids re-downloading."""
-    config = DataSetConfig(repo_id="lerobot/pusht", fps=10)
+    config = DataSetConfig(
+        repo_id="lerobot/pusht",
+        fps=10,
+        cameras=["image"],
+        obs_horizon=OBS_HORIZON,
+        action_horizon=ACTION_HORIZON,
+    )
     device = get_device()
     return LerobotDatasetWrapper.create_loaders(config, device)
 
@@ -22,12 +32,16 @@ def test_batch_shape(loaders):
     train_loader, _ = loaders
     batch = next(iter(train_loader))
 
-    # Check expected keys exist
+    B = train_loader.batch_size
+
     assert "observation.state" in batch
     assert "action" in batch
+    assert "observation.image" in batch
 
-    # Check batch dimension
-    assert batch["action"].shape[0] == train_loader.batch_size
+    assert batch["action"].shape == (B, ACTION_HORIZON, 2)
+    assert batch["observation.state"].shape == (B, OBS_HORIZON, 2)
+    # Images must have the temporal dimension matching obs_horizon so train == eval
+    assert batch["observation.image"].shape[1] == OBS_HORIZON
 
 
 def test_no_episode_leakage(loaders):

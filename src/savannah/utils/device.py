@@ -1,5 +1,7 @@
 import torch
 
+from savannah.utils.log import logger
+
 
 def get_device():
     device = torch.device("cpu")
@@ -10,6 +12,5 @@ def get_device():
         torch.mps.empty_cache()
         torch.mps.synchronize()
 
-    print("Currently using device: ", device)
-
+    logger.info("Using device: {}", device)
     return device

@@ -6,4 +6,6 @@ defaults:
 
 wandb:
   project: savannah
-  use_wandb: false
+  use_wandb: true
+
+log_level: INFO # DEBUG | INFO | WARNING | ERROR

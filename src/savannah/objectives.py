@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 from diffusers import DDIMScheduler
 
+from savannah.utils.log import logger
 from savannah.utils.observation import ObservationKey
 from savannah.utils.policy import PolicyOutput
 
@@ -127,8 +128,8 @@ class DDIMObjective(PolicyObjective):
                     (B,), float(t.item()), device=device
                 )
                 model_output = model.forward(obs, noisy_actions=x_t).actions
-                print("[OBJECTIVES] Model output: ", model_output)
+                logger.debug("DDIM step {}: model_output={}", t.item(), model_output)
                 x_t = self.scheduler.step(model_output, t, x_t).prev_sample
-                print("[OBJECTIVES] X_t: ", x_t)
+                logger.debug("DDIM step {}: x_t={}", t.item(), x_t)
 
             return PolicyOutput(actions=x_t)

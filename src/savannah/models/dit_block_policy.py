@@ -8,6 +8,7 @@ from savannah.nn.positional_embeddings import get_sinusoidal_position_embedding
 from savannah.nn.self_attention import SelfAttention
 from savannah.nn.time_embedding import TimeEmbedding
 from savannah.objectives import PolicyObjective
+from savannah.utils.log import logger
 from savannah.utils.observation import ObservationKey
 from savannah.utils.policy import PolicyOutput
 
@@ -210,14 +211,16 @@ class DiTBlockPolicy(Policy):
 
     @staticmethod
     def _debug_stat(name: str, t: torch.Tensor) -> None:
-        print(
-            f"[DEBUG] {name}: shape={tuple(t.shape)}, "
-            f"min={t.min().item():.6f}, max={t.max().item():.6f}, "
-            f"mean={t.mean().item():.6f}, "
-            f"nan={torch.isnan(t).any().item()}, inf={torch.isinf(t).any().item()}"
+        logger.debug(
+            "{}: shape={}, min={:.6f}, max={:.6f}, mean={:.6f}, nan={}, inf={}",
+            name,
+            tuple(t.shape),
+            t.min().item(),
+            t.max().item(),
+            t.mean().item(),
+            torch.isnan(t).any().item(),
+            torch.isinf(t).any().item(),
         )
-
-        # pass
 
     def forward(self, obs: dict[str, torch.Tensor], *args, **kwargs) -> PolicyOutput:
         x_img = obs[ObservationKey.images]

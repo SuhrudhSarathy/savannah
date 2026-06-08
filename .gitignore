@@ -7,3 +7,4 @@ checkpoints/
 *.egg-info
 *artifacts
 outputs/
+*logs*/

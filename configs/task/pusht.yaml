@@ -3,8 +3,8 @@ config:
   _target_: savannah.data.dataset.DataSetConfig
   repo_id: lerobot/pusht
   fps: 10
-  cameras: []
-  obs_horizon: 3
+  cameras: ["image"]
+  obs_horizon: 2
   action_horizon: ${model.action_horizon}
   batch_size: 32
   num_workers: 4
