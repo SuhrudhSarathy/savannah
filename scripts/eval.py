@@ -1,6 +1,8 @@
 import sys
 from collections import deque
 
+from savannah.utils.observation import ObservationKey
+
 try:
     import imp
 except ImportError:
@@ -10,8 +12,8 @@ except ImportError:
     imp = ModuleType("imp")
     sys.modules["imp"] = imp
 
-import torch
 import hydra
+import torch
 from omegaconf import DictConfig
 
 from savannah.models.factory import build_policy, build_task

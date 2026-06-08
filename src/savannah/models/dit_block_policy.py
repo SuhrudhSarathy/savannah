@@ -208,28 +208,49 @@ class DiTBlockPolicy(Policy):
             nn.Linear(self._action_dim, self._action_dim),
         )
 
+    @staticmethod
+    def _debug_stat(name: str, t: torch.Tensor) -> None:
+        print(
+            f"[DEBUG] {name}: shape={tuple(t.shape)}, "
+            f"min={t.min().item():.6f}, max={t.max().item():.6f}, "
+            f"mean={t.mean().item():.6f}, "
+            f"nan={torch.isnan(t).any().item()}, inf={torch.isinf(t).any().item()}"
+        )
+
+        # pass
+
     def forward(self, obs: dict[str, torch.Tensor], *args, **kwargs) -> PolicyOutput:
         x_img = obs[ObservationKey.images]
         x_state = obs[ObservationKey.state]
         x_time = obs[ObservationKey.time]
 
+        for cam_idx, img in enumerate(x_img):
+            self._debug_stat(f"x_img[{cam_idx}] (raw)", img)
+        self._debug_stat("x_state (raw)", x_state)
+        self._debug_stat("x_time (raw)", x_time)
+
         # Get noisy actions from kwargs
         noisy_actions = kwargs.get("noisy_actions", None)
         if noisy_actions is None:
             raise AssertionError("Pass noisy action for the model to run")
+        self._debug_stat("noisy_actions (raw)", noisy_actions)
 
         # (B, T, embed_dim)
         x_cam_tokens = self._encode_cameras(x_img)
+        self._debug_stat("x_cam_tokens", x_cam_tokens)
 
         # (B, N, state_dim) -> (B, N, embedding_dim)
         x_state = self.state_embedding(x_state)
+        self._debug_stat("x_state (embedded)", x_state)
 
         # Add time embeddings for states also
         x_state_time_embed = self.time_embedding(
             torch.arange(x_state.shape[1], device=x_state.device).unsqueeze(1)
         )
+        self._debug_stat("x_state_time_embed", x_state_time_embed)
 
         x_state = x_state + x_state_time_embed
+        self._debug_stat("x_state (+ time embed)", x_state)
 
         # (B,) -> (B, 1) optionally
         if len(x_time.shape) == 1:
@@ -237,19 +258,24 @@ class DiTBlockPolicy(Policy):
 
         # (B, 1) -> (B, 1, embed_dim)
         x_time = self.time_embedding(x_time).unsqueeze(1)
+        self._debug_stat("x_time (embedded)", x_time)
 
         # Project the noisy actions to embeding space
         # (B, N_obs, action_dim) -> (B, N_obs, embed_dim)
         x_noisy_actions = self.action_embedding(noisy_actions)
+        self._debug_stat("x_noisy_actions (embedded)", x_noisy_actions)
 
         x_noisy_actions = x_noisy_actions + self.action_time_embedding
+        self._debug_stat("x_noisy_actions (+ pos embed)", x_noisy_actions)
 
         x_cond = torch.cat([x_cam_tokens, x_state], dim=1)
+        self._debug_stat("x_cond", x_cond)
 
         encoder_layer_outputs = []
         x_enc_out = x_cond
-        for enc in self.encoders:
+        for i, enc in enumerate(self.encoders):
             x_enc_out = enc(x_enc_out)
+            self._debug_stat(f"encoder[{i}] out", x_enc_out)
             encoder_layer_outputs.append(x_enc_out)
 
         x_out = x_noisy_actions
@@ -257,11 +283,16 @@ class DiTBlockPolicy(Policy):
             # (B, TC, embed_dim) -> (B, 1, embed_dim)
             x_enc_out = encoder_layer_outputs[i]
             x_enc_mean = torch.mean(x_enc_out, dim=1, keepdim=True)
+            self._debug_stat(f"decoder[{i}] x_enc_mean", x_enc_mean)
+
             x_kv = torch.cat([x_enc_mean, x_time], dim=-1)
+            self._debug_stat(f"decoder[{i}] x_kv", x_kv)
 
             x_out = dec(x_out, x_kv)
+            self._debug_stat(f"decoder[{i}] out", x_out)
 
         x_out_action = self.action_reprojection(x_out)
+        self._debug_stat("x_out_action (final)", x_out_action)
 
         output = PolicyOutput(actions=x_out_action)
 

@@ -16,6 +16,7 @@ from savannah.trainer.scheduler import get_custom_scheduler
 from savannah.utils.device import get_device
 from savannah.utils.eval_and_log import evaluate_and_log
 from savannah.utils.logger import ExperimentLogger
+from savannah.utils.observation import ObservationKey
 
 
 @dataclass
@@ -111,6 +112,18 @@ class PolicyTrainer:
 
             # 2. Format batch using the Task
             batch = self.task.format_batch(raw_batch)
+            # print(
+            #     batch[ObservationKey.images][0].max(),
+            #     batch[ObservationKey.images][0].min(),
+            # )
+
+            # print(batch[ObservationKey.state].max(), batch[ObservationKey.state].min())
+            # print(
+            #     batch[ObservationKey.gt_actions].max(),
+            #     batch[ObservationKey.gt_actions].min(),
+            # )
+
+            # quit()
 
             # 3. Forward Pass & Loss (Policy handles all ODE matching internally!)
             loss = self.policy.compute_loss(batch)

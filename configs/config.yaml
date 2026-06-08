@@ -1,9 +1,9 @@
 defaults:
-    - model: dit_block
-    - task: pusht
-    - trainer: default
-    - _self_
+  - model: dit_block
+  - task: pusht
+  - trainer: default
+  - _self_
 
 wandb:
-    project: savannah
-    use_wandb: true
+  project: savannah
+  use_wandb: false
