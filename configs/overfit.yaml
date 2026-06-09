@@ -1,13 +1,15 @@
 defaults:
-  - model: dumb_model
+  - model: dit_block
   - task: pusht
   - _self_
 
 overfit:
-  batch_size: 8
+  batch_size: 1
   image_size: 96
-  steps: 500
+  steps: 1000
   lr: 1.0e-4
   log_every: 50
   loss_threshold: 0.01 # final loss must drop below this to count as a PASS
   action_mse_threshold: 0.05 # sampled-vs-ground-truth action MSE must drop below this to count as a PASS
+
+log_level: INFO

@@ -1,13 +1,14 @@
-from fontTools.merge.layout import first
-from savannah.utils.device import get_device
-from savannah.utils.observation import ObservationKey
-from savannah.utils.policy import PolicyOutput
-from savannah.models.policy import Policy
-from savannah.objectives import OverfitObjective
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from fontTools.merge.layout import first
 from torch.optim import AdamW
+
+from savannah.models.policy import Policy
+from savannah.objectives import OverfitObjective
+from savannah.utils.device import get_device
+from savannah.utils.observation import ObservationKey
+from savannah.utils.policy import PolicyOutput
 
 
 class DumbPolicy(Policy):
@@ -29,7 +30,7 @@ class DumbPolicy(Policy):
         self.objective = OverfitObjective()
 
     def forward(self, obs: dict[str, torch.Tensor], *args, **kwargs) -> PolicyOutput:
-        x_gt = obs[ObservationKey.gt_actions]
+        x_gt = kwargs["noisy_actions"]
         out = self.model(x_gt)
 
         return PolicyOutput(actions=out)

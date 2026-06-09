@@ -84,6 +84,7 @@ class DecoderBlock(nn.Module):
         self.dropout_layer = nn.Dropout(self.dropout)
 
         self.adaln_block = nn.Linear(2 * self.embed_dim, 6 * self.embed_dim)
+        self._init_adaln_zero()
 
     def _init_adaln_zero(self):
         """Initializes the alpha scaling projections to 0 so the network
@@ -203,11 +204,7 @@ class DiTBlockPolicy(Policy):
         )
 
         # Action reprojection
-        self.action_reprojection = nn.Sequential(
-            nn.Linear(self.embed_dim, self._action_dim),
-            nn.GELU(),
-            nn.Linear(self._action_dim, self._action_dim),
-        )
+        self.action_reprojection = nn.Linear(self.embed_dim, self._action_dim)
 
     @staticmethod
     def _debug_stat(name: str, t: torch.Tensor) -> None:

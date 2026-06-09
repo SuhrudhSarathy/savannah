@@ -96,7 +96,6 @@ class PolicyTrainer:
         train_iter = iter(train_loader)
 
         val_loader = self.task.get_val_loader()
-        val_iter = iter(val_loader)
 
         # Use a flat tqdm loop based on steps, rather than epochs
         pbar = tqdm(total=self.config.training_steps, desc="Training")
@@ -113,18 +112,6 @@ class PolicyTrainer:
 
             # 2. Format batch using the Task
             batch = self.task.format_batch(raw_batch)
-            # print(
-            #     batch[ObservationKey.images][0].max(),
-            #     batch[ObservationKey.images][0].min(),
-            # )
-
-            # print(batch[ObservationKey.state].max(), batch[ObservationKey.state].min())
-            # print(
-            #     batch[ObservationKey.gt_actions].max(),
-            #     batch[ObservationKey.gt_actions].min(),
-            # )
-
-            # quit()
 
             # 3. Forward Pass & Loss (Policy handles all ODE matching internally!)
             loss = self.policy.compute_loss(batch)
@@ -183,6 +170,7 @@ class PolicyTrainer:
                 and self.global_step % self.config.sim_eval_freq == 0
             ):
                 logger.info("── Live sim eval at step {} ──", self.global_step)
+                self.ema.shadow.eval()
                 success_rate, mean_reward = evaluate_and_log(
                     policy=self.ema.shadow,
                     task=self.task,
@@ -224,6 +212,7 @@ class PolicyTrainer:
                 artifact_name=self.config.artifact_name,
                 aliases=["best"],
             )
+        if os.path.exists(best_model_success_path):
             self.logger.log_model_artifact(
                 model_path=best_model_success_path,
                 artifact_name=self.config.artifact_name,

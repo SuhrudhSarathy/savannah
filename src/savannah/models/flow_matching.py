@@ -240,13 +240,13 @@ class FlowMatchingPolicy(Policy):
         # Concatenate image tokens and proprio tokens
         # x_input_tokens = torch.cat([x_cam_tokens, x_state, x_noisy_actions], dim=1)
         x_cond_tokens = torch.cat([x_cam_tokens, x_state], dim=1)
-
+        x_out = x_noisy_actions
         for block in self.fm_blocks:
             # (B, T, n_embed) -> (B, T, n_embed)
-            x_input_tokens = block(x_noisy_actions, x_cond_tokens, x_time)
+            x_out = block(x_out, x_cond_tokens, x_time)
 
         # (B, T, embed_dim) -> (B, T, embed_dim)
-        x_out = self.layer_norm(x_input_tokens, x_time)
+        x_out = self.layer_norm(x_out, x_time)
 
         # T = N_obs
         # (B, T, embed_dim) -> (B, N_obs, embed_dim)
