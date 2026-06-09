@@ -70,7 +70,9 @@ class ExperimentLogger:
         self, file_path: str, artifact_name: str, artifact_type: str = "logs"
     ):
         if self.use_wandb:
-            logger.info("Uploading {} to W&B artifacts as '{}'…", file_path, artifact_name)
+            logger.info(
+                "Uploading {} to W&B artifacts as '{}'…", file_path, artifact_name
+            )
             try:
                 artifact = wandb.Artifact(name=artifact_name, type=artifact_type)
                 artifact.add_file(file_path)

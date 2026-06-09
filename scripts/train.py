@@ -9,7 +9,10 @@ except ImportError:
     imp = ModuleType("imp")
     sys.modules["imp"] = imp
 
+import os
+
 import hydra
+import torch
 from omegaconf import DictConfig, OmegaConf
 
 from savannah.models.factory import build_policy, build_task
@@ -22,6 +25,11 @@ from savannah.utils.logger import ExperimentLogger
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def main(cfg: DictConfig) -> None:
     log_path = setup_logging(log_dir="logs", level=cfg.log_level)
+
+    fraction = float(os.environ.get("CUDA_MEMORY_FRACTION", "1.0"))
+    if fraction < 1.0 and torch.cuda.is_available():
+        torch.cuda.set_per_process_memory_fraction(fraction)
+        logger.info("VRAM cap: {:.0%} of device memory", fraction)
 
     device = get_device()
 
