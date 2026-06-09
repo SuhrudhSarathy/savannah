@@ -45,9 +45,9 @@ class ActionChunkVisualizer(gym.Wrapper):
             # IMPORTANT: The source logic implies action[0] is Y and action[1] is X.
             # OpenCV needs (column, row) which is (X, Y).
             # So we pass (action[1], action[0])
-            center = (int(action[0]), int(action[1]))
+            center = (int(action[1]), int(action[0]))
 
-            logger.debug("render: action=({}, {})", action[0], action[1])
+            logger.debug("render: action=({}, {})", action[1], action[0])
 
             # Color logic matching your source
             color = (

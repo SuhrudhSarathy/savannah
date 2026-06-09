@@ -21,7 +21,7 @@ from savannah.utils.logger import ExperimentLogger
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def main(cfg: DictConfig) -> None:
-    setup_logging(log_dir="logs", level=cfg.log_level)
+    log_path = setup_logging(log_dir="logs", level=cfg.log_level)
 
     device = get_device()
 
@@ -39,6 +39,10 @@ def main(cfg: DictConfig) -> None:
 
     trainer = PolicyTrainer(policy, task, exp_logger, train_config, device)
     trainer.train()
+
+    if log_path and log_path.exists():
+        exp_logger.log_file_artifact(str(log_path), artifact_name="train-log")
+    exp_logger.finish()
 
 
 if __name__ == "__main__":

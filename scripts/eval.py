@@ -14,7 +14,7 @@ except ImportError:
 
 import hydra
 import torch
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from savannah.models.factory import build_policy, build_task
 from savannah.tasks import RecordedEnv
@@ -22,11 +22,17 @@ from savannah.utils.checkpoint import resolve_checkpoint_path
 from savannah.utils.device import get_device
 from savannah.utils.eval_and_log import ActionBuffer
 from savannah.utils.log import logger, setup_logging
+from savannah.utils.logger import ExperimentLogger
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="eval")
 def main(cfg: DictConfig) -> None:
-    setup_logging(log_dir="logs", level=cfg.log_level)
+    log_path = setup_logging(log_dir="logs", level=cfg.log_level)
+    exp_logger = ExperimentLogger(
+        project_name=cfg.wandb.project,
+        config=OmegaConf.to_container(cfg, resolve=True),
+        use_wandb=cfg.wandb.use_wandb,
+    )
     device = get_device()
 
     task = build_task(cfg, device=device)
@@ -53,7 +59,12 @@ def main(cfg: DictConfig) -> None:
         done = False
 
         logger.info("── Episode {}/{} ──", ep + 1, cfg.num_episodes)
+        i = 0
         while not done:
+            i += 1
+            if i > 100:
+                done = True
+
             if action_buffer.is_empty():
                 obs_dict = task.preprocess_observation_history(obs_history)
                 with torch.no_grad():
@@ -84,6 +95,10 @@ def main(cfg: DictConfig) -> None:
 
     env.close()
     logger.info("Success rate: {}/{}", successes, cfg.num_episodes)
+
+    if log_path and log_path.exists():
+        exp_logger.log_file_artifact(str(log_path), artifact_name="eval-log")
+    exp_logger.finish()
 
 
 if __name__ == "__main__":

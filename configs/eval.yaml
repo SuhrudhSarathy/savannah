@@ -11,3 +11,7 @@ execute_steps: 4 # how many actions to execute per chunk (receding horizon)
 video_folder: ./eval_videos
 episode_index: 0 # which dataset episode to inspect (used by eval_single_episode.py)
 log_level: INFO  # DEBUG | INFO | WARNING | ERROR
+
+wandb:
+  project: savannah
+  use_wandb: true

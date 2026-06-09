@@ -1,5 +1,6 @@
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from loguru import logger
@@ -30,7 +31,9 @@ class _InterceptHandler(logging.Handler):
         )
 
 
-def setup_logging(log_dir: str | Path | None = None, level: str = "INFO") -> None:
+def setup_logging(
+    log_dir: str | Path | None = None, level: str = "INFO"
+) -> Path | None:
     """Call once at process startup.
 
     - Colored stderr sink at `level` (default INFO).
@@ -38,6 +41,8 @@ def setup_logging(log_dir: str | Path | None = None, level: str = "INFO") -> Non
       tensor debug stats, hydra config dumps, torch warnings).
     - Stdlib logging interceptor so hydra/torch/lerobot logs land in the same
       stream rather than writing directly to stderr.
+
+    Returns the log file path, or None if log_dir was not provided.
     """
     logger.remove()
 
@@ -45,10 +50,13 @@ def setup_logging(log_dir: str | Path | None = None, level: str = "INFO") -> Non
         sys.stderr, format=_CONSOLE_FMT, level=level, colorize=True, enqueue=True
     )
 
+    log_path: Path | None = None
     if log_dir is not None:
         Path(log_dir).mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        log_path = Path(log_dir) / f"run_{ts}.log"
         logger.add(
-            str(Path(log_dir) / "run_{time:YYYY-MM-DD_HH-mm-ss}.log"),
+            str(log_path),
             format=_FILE_FMT,
             level="DEBUG",
             rotation="50 MB",
@@ -62,6 +70,8 @@ def setup_logging(log_dir: str | Path | None = None, level: str = "INFO") -> Non
         log = logging.getLogger(name)
         log.handlers = [_InterceptHandler()]
         log.propagate = False
+
+    return log_path
 
 
 __all__ = ["logger", "setup_logging"]
