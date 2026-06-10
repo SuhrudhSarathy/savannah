@@ -15,3 +15,9 @@ experiments:
       - model=flow_matching
       - trainer.artifact_name=flow_matching_pusht
       - trainer.checkpoint_dir=checkpoints/flow_matching_pusht
+
+  - name: unet_pusht
+    overrides:
+      - model=unet
+      - trainer.artifact_name=unet_pusht
+      - trainer.checkpoint_dir=checkpoints/unet_pusht

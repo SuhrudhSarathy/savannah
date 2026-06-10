@@ -20,7 +20,7 @@ from omegaconf import DictConfig, OmegaConf
 from torch.optim import AdamW
 from tqdm import tqdm
 
-from savannah.models.factory import build_policy, build_task
+from savannah.factory import build_policy, build_task
 from savannah.trainer.trainer import PolicyTrainer, TrainConfig
 from savannah.utils.device import get_device
 from savannah.utils.log import logger, setup_logging

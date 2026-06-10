@@ -13,7 +13,7 @@ import hydra
 import torch
 from omegaconf import DictConfig
 
-from savannah.models.factory import build_policy
+from savannah.factory import build_policy
 from savannah.models.policy import Policy
 from savannah.trainer.overfit import overfit_on_batch
 from savannah.utils.device import get_device

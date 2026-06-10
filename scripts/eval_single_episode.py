@@ -15,7 +15,7 @@ import torch
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from omegaconf import DictConfig
 
-from savannah.models.factory import build_policy, build_task
+from savannah.factory import build_policy, build_task
 from savannah.utils.checkpoint import resolve_checkpoint_path
 from savannah.utils.device import get_device
 from savannah.utils.observation import ObservationKey

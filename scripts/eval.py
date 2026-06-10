@@ -16,7 +16,7 @@ import hydra
 import torch
 from omegaconf import DictConfig, OmegaConf
 
-from savannah.models.factory import build_policy, build_task
+from savannah.factory import build_policy, build_task
 from savannah.tasks import RecordedEnv
 from savannah.utils.checkpoint import resolve_checkpoint_path
 from savannah.utils.device import get_device

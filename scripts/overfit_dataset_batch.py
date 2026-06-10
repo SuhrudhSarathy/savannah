@@ -12,7 +12,7 @@ except ImportError:
 import hydra
 from omegaconf import DictConfig
 
-from savannah.models.factory import build_policy, build_task
+from savannah.factory import build_policy, build_task
 from savannah.trainer.overfit import overfit_on_batch, validate_action_reconstruction
 from savannah.utils.device import get_device
 from savannah.utils.log import logger, setup_logging
