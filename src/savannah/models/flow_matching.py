@@ -123,7 +123,7 @@ class AdaLN(nn.Module):
 
         x = self.norm(x)
         x = x * (1 + gamma) + beta  # Scale and shift
-        x = x * alpha  # Gate the output
+        x = x + x * alpha  # Gate the output (residual, identity at init)
         return x
 
 
@@ -179,11 +179,7 @@ class FlowMatchingPolicy(Policy):
         )
 
         # Action reprojection
-        self.action_reprojection = nn.Sequential(
-            nn.Linear(self.embed_dim, self.action_dim),
-            nn.GELU(),
-            nn.Linear(self.action_dim, self.action_dim),
-        )
+        self.action_reprojection = nn.Linear(self.embed_dim, self.action_dim)
 
         # FMBlocks
         self.fm_blocks = nn.ModuleList(
@@ -222,8 +218,11 @@ class FlowMatchingPolicy(Policy):
         if len(x_time.shape) == 1:
             x_time = x_time.unsqueeze(1)
 
+        # Scale [0, 1) flow time into the ~[0, 100) range TimeEmbedding's
+        # sinusoidal frequencies are calibrated for, so most embedding dims
+        # actually vary with t instead of sitting near (sin=0, cos=1).
         # (B, 1) -> (B, 1, embed_dim)
-        x_time = self.time_embedding(x_time).unsqueeze(1)
+        x_time = self.time_embedding(x_time * 100.0).unsqueeze(1)
 
         # Project the noisy actions to embeding space
         # (B, N_obs, action_dim) -> (B, N_obs, embed_dim)

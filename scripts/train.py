@@ -24,7 +24,7 @@ from savannah.utils.logger import ExperimentLogger
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def main(cfg: DictConfig) -> None:
-    log_path = setup_logging(log_dir="logs", level=cfg.log_level)
+    setup_logging(log_dir="logs", level=cfg.log_level)
 
     fraction = float(os.environ.get("CUDA_MEMORY_FRACTION", "1.0"))
     if fraction < 1.0 and torch.cuda.is_available():
@@ -43,13 +43,12 @@ def main(cfg: DictConfig) -> None:
         project_name=cfg.wandb.project,
         config=OmegaConf.to_container(cfg, resolve=True),
         use_wandb=cfg.wandb.use_wandb,
+        run_name=cfg.wandb.run_name,
     )
 
     trainer = PolicyTrainer(policy, task, exp_logger, train_config, device)
     trainer.train()
 
-    if log_path and log_path.exists():
-        exp_logger.log_file_artifact(str(log_path), artifact_name="train-log")
     exp_logger.finish()
 
 

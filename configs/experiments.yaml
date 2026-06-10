@@ -1,18 +1,17 @@
 # Template for multi_run.py
 # Run: uv run python scripts/multi_run.py configs/experiments.yaml
 
-vram_per_run_gb: 8  # estimated VRAM per training run; controls parallelism
+vram_per_run_gb: 12
 
 experiments:
-  - name: lr_high
+  - name: dit_block_pusht
     overrides:
-      - trainer.lr=3e-4
+      - model=dit_block
+      - trainer.artifact_name=dit_block_pusht
+      - trainer.checkpoint_dir=checkpoints/dit_block_pusht
 
-  - name: lr_low
+  - name: flow_matching_pusht
     overrides:
-      - trainer.lr=1e-4
-
-  - name: more_steps
-    overrides:
-      - trainer.lr=2e-4
-      - trainer.training_steps=200000
+      - model=flow_matching
+      - trainer.artifact_name=flow_matching_pusht
+      - trainer.checkpoint_dir=checkpoints/flow_matching_pusht

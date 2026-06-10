@@ -194,7 +194,7 @@ class DiTBlockPolicy(Policy):
         sinusoidal_position_embeddings = get_sinusoidal_position_embedding(
             self._action_horizon, self.embed_dim
         )
-        self.action_time_embedding = nn.Parameter(sinusoidal_position_embeddings)
+        self.register_buffer("action_time_embedding", sinusoidal_position_embeddings)
 
         # Action Embedding
         self.action_embedding = nn.Sequential(

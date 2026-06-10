@@ -66,23 +66,6 @@ class ExperimentLogger:
         else:
             logger.debug("W&B disabled — skipping artifact upload for {}", model_path)
 
-    def log_file_artifact(
-        self, file_path: str, artifact_name: str, artifact_type: str = "logs"
-    ):
-        if self.use_wandb:
-            logger.info(
-                "Uploading {} to W&B artifacts as '{}'…", file_path, artifact_name
-            )
-            try:
-                artifact = wandb.Artifact(name=artifact_name, type=artifact_type)
-                artifact.add_file(file_path)
-                wandb.log_artifact(artifact)
-                logger.success("Artifact '{}' uploaded successfully.", artifact_name)
-            except Exception as e:
-                logger.error("Failed to upload artifact '{}': {}", artifact_name, e)
-        else:
-            logger.debug("W&B disabled — skipping artifact upload for {}", file_path)
-
     def finish(self):
         if self.use_wandb:
             wandb.finish()

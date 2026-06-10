@@ -17,6 +17,7 @@ from savannah.models.factory import build_policy
 from savannah.models.policy import Policy
 from savannah.trainer.overfit import overfit_on_batch
 from savannah.utils.device import get_device
+from savannah.utils.log import setup_logging
 from savannah.utils.observation import ObservationKey
 
 
@@ -60,6 +61,7 @@ def main(cfg: DictConfig) -> None:
     no sim — to catch wiring bugs (shapes, gradients, loss) before spending
     time on the data pipeline or a full training run.
     """
+    setup_logging(log_dir="logs", level=cfg.log_level)
     device = get_device()
     print("Using device:", device)
 

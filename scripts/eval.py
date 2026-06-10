@@ -27,7 +27,7 @@ from savannah.utils.logger import ExperimentLogger
 
 @hydra.main(version_base=None, config_path="../configs", config_name="eval")
 def main(cfg: DictConfig) -> None:
-    log_path = setup_logging(log_dir="logs", level=cfg.log_level)
+    setup_logging(log_dir="logs", level=cfg.log_level)
     exp_logger = ExperimentLogger(
         project_name=cfg.wandb.project,
         config=OmegaConf.to_container(cfg, resolve=True),
@@ -96,8 +96,6 @@ def main(cfg: DictConfig) -> None:
     env.close()
     logger.info("Success rate: {}/{}", successes, cfg.num_episodes)
 
-    if log_path and log_path.exists():
-        exp_logger.log_file_artifact(str(log_path), artifact_name="eval-log")
     exp_logger.finish()
 
 
