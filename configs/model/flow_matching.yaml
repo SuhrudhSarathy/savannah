@@ -6,7 +6,7 @@ num_blocks: 6
 state_dim: 2
 action_dim: 2
 action_horizon: 8
-num_cameras: 3
+num_cameras: 1
 objective:
   _target_: savannah.objectives.FlowMatchingObjective
   inference_steps: 10

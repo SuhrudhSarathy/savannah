@@ -14,7 +14,7 @@ num_cameras: 1
 objective:
   _target_: savannah.objectives.DDIMObjective
   num_train_timesteps: 100
-  num_inference_steps: 50
+  num_inference_steps: 10
   beta_start: 1e-4
   beta_end: 0.02
   clip_sample: True
