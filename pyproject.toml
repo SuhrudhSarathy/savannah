@@ -24,6 +24,7 @@ dependencies = [
     "gym-pusht",
     "pymunk==6.11.1",
     "loguru",
+    "google-cloud-storage>=3.11.0",
 ]
 
 [project.optional-dependencies]

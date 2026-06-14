@@ -7,23 +7,19 @@ experiments:
   # - name: dit_block_pusht
   #   overrides:
   #     - model=dit_block
-  #     - trainer.artifact_name=dit_block_pusht
   #     - trainer.checkpoint_dir=checkpoints/dit_block_pusht
 
   # - name: flow_matching_pusht
   #   overrides:
   #     - model=flow_matching
-  #     - trainer.artifact_name=flow_matching_pusht
   #     - trainer.checkpoint_dir=checkpoints/flow_matching_pusht
 
   - name: unet_pusht_ddim
     overrides:
       - model=unet
-      - trainer.artifact_name=unet_pusht_ddim
       - trainer.checkpoint_dir=checkpoints/unet_pusht_ddim
 
   - name: unet_pusht_flow_matching
     overrides:
       - model=unet_flow_matching
-      - trainer.artifact_name=unet_pusht_flow_matching
       - trainer.checkpoint_dir=checkpoints/unet_pusht_flow_matching

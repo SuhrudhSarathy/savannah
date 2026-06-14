@@ -70,8 +70,13 @@ uv run python scripts/train.py model=unet trainer.training_steps=50000
 uv run python scripts/train.py wandb.use_wandb=false
 ```
 
-Checkpoints are written to `trainer.checkpoint_dir` (default `checkpoints/`) and logged as a
-W&B artifact named `trainer.artifact_name`.
+Checkpoints are written to `trainer.checkpoint_dir` (default `checkpoints/`).
+
+To additionally upload `best_model`, `best_model_success`, and `latest` checkpoints to
+Google Cloud Storage at the end of training, set `trainer.gcs_bucket=<bucket-name>`
+(requires GCS credentials via Application Default Credentials — run
+`gcloud auth application-default login` or set `GOOGLE_APPLICATION_CREDENTIALS`).
+Checkpoints land at `gs://<bucket>/<trainer.artifact_name>_<run-timestamp>/`.
 
 ### Running multiple experiments
 

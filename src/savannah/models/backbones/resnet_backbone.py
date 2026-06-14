@@ -7,32 +7,26 @@ from savannah.models.backbones import VisionFeatureExtractor
 
 
 class SpatialSoftmax(nn.Module):
-    def __init__(self, height: int = 3, width: int = 3, channel: int = 512):
-        super().__init__()
-        self.height = height
-        self.width = width
-        self.channel = channel
-
-        # Create coordinates from -1 to 1
-        pos_x, pos_y = torch.meshgrid(
-            torch.linspace(-1, 1, self.width),
-            torch.linspace(-1, 1, self.height),
-            indexing="ij",
-        )
-        self.register_buffer("pos_x", pos_x.reshape(-1))
-        self.register_buffer("pos_y", pos_y.reshape(-1))
-
     def forward(self, x):
-        # x: [B, 512, 3, 3]
+        # x: [B, C, H, W] — H, W depend on the input image resolution
         b, c, h, w = x.size()
         logits = x.view(b, c, h * w)
         probs = F.softmax(logits, dim=-1)
 
-        # Expected x, y coordinates
-        expected_x = torch.sum(probs * self.pos_x, dim=-1)
-        expected_y = torch.sum(probs * self.pos_y, dim=-1)
+        # Coordinates from -1 to 1, computed for the actual feature map size
+        pos_x, pos_y = torch.meshgrid(
+            torch.linspace(-1, 1, w, device=x.device),
+            torch.linspace(-1, 1, h, device=x.device),
+            indexing="ij",
+        )
+        pos_x = pos_x.reshape(-1)
+        pos_y = pos_y.reshape(-1)
 
-        # Output: [B, 1024] (512 x-coords and 512 y-coords)
+        # Expected x, y coordinates
+        expected_x = torch.sum(probs * pos_x, dim=-1)
+        expected_y = torch.sum(probs * pos_y, dim=-1)
+
+        # Output: [B, 2 * C] (C x-coords and C y-coords)
         return torch.stack([expected_x, expected_y], dim=-1).view(b, c * 2)
 
 

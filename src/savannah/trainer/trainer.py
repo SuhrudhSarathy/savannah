@@ -2,6 +2,8 @@ import copy
 import math
 import os
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional
 
 import torch
 from hydra.core.config_store import ConfigStore
@@ -15,6 +17,7 @@ from savannah.trainer.ema import EMA
 from savannah.trainer.scheduler import get_custom_scheduler
 from savannah.utils.device import get_device
 from savannah.utils.eval_and_log import evaluate_and_log
+from savannah.utils.gcs import upload_file_to_gcs
 from savannah.utils.log import logger
 from savannah.utils.logger import ExperimentLogger
 from savannah.utils.observation import ObservationKey
@@ -33,6 +36,7 @@ class TrainConfig:
     ema_decay: float = 0.9999
     checkpoint_dir: str = "checkpoints"
     artifact_name: str = "model"
+    gcs_bucket: Optional[str] = None
 
 
 cs = ConfigStore.instance()
@@ -73,6 +77,9 @@ class PolicyTrainer:
         self.global_step = 0
         self.best_success_rate = -1.0
         self.best_val_loss = 10000.0
+
+        # Captured once so all checkpoints uploaded for this run share a folder.
+        self.run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         os.makedirs(self.config.checkpoint_dir, exist_ok=True)
 
@@ -200,30 +207,20 @@ class PolicyTrainer:
 
         pbar.close()
 
-        best_model_path = os.path.join(self.config.checkpoint_dir, "best_model.ckpt")
-        latest_model_path = os.path.join(self.config.checkpoint_dir, "latest.ckpt")
-        best_model_success_path = os.path.join(
-            self.config.checkpoint_dir, "best_model_success.ckpt"
-        )
+        if self.config.gcs_bucket:
+            gcs_prefix = f"{self.config.artifact_name}_{self.run_timestamp}"
+            for ckpt_name in ("best_model.ckpt", "best_model_success.ckpt", "latest.ckpt"):
+                local_path = os.path.join(self.config.checkpoint_dir, ckpt_name)
+                if os.path.exists(local_path):
+                    try:
+                        uri = upload_file_to_gcs(
+                            local_path, self.config.gcs_bucket, f"{gcs_prefix}/{ckpt_name}"
+                        )
+                        logger.success("Uploaded {} to {}", local_path, uri)
+                    except Exception as e:
+                        logger.error("Failed to upload {} to GCS: {}", local_path, e)
+        else:
+            logger.debug("gcs_bucket not set — skipping checkpoint upload to GCS.")
 
-        if os.path.exists(best_model_path):
-            self.logger.log_model_artifact(
-                model_path=best_model_path,
-                artifact_name=self.config.artifact_name,
-                aliases=["best"],
-            )
-        if os.path.exists(best_model_success_path):
-            self.logger.log_model_artifact(
-                model_path=best_model_success_path,
-                artifact_name=self.config.artifact_name,
-                aliases=["best_success"],
-            )
-        if os.path.exists(latest_model_path):
-            # Fallback in case we never beat the initial validation score
-            self.logger.log_model_artifact(
-                model_path=latest_model_path,
-                artifact_name=self.config.artifact_name,
-                aliases=["latest"],
-            )
         self.logger.finish()
         print("Training Complete!")

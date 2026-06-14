@@ -49,23 +49,6 @@ class ExperimentLogger:
                 video_array.shape,
             )
 
-    def log_model_artifact(
-        self, model_path: str, artifact_name: str, aliases: list[str] | None = None
-    ):
-        if self.use_wandb:
-            logger.info(
-                "Uploading {} to W&B artifacts as '{}'…", model_path, artifact_name
-            )
-            try:
-                artifact = wandb.Artifact(name=artifact_name, type="model")
-                artifact.add_file(model_path)
-                wandb.log_artifact(artifact, aliases=aliases)
-                logger.success("Artifact '{}' uploaded successfully.", artifact_name)
-            except Exception as e:
-                logger.error("Failed to upload artifact '{}': {}", artifact_name, e)
-        else:
-            logger.debug("W&B disabled — skipping artifact upload for {}", model_path)
-
     def finish(self):
         if self.use_wandb:
             wandb.finish()

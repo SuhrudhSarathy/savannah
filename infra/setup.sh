@@ -21,6 +21,16 @@ else
     echo "    Run: uv run wandb login <your-api-key>"
 fi
 
+echo "==> Checking GCS credentials..."
+if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
+    echo "    GOOGLE_APPLICATION_CREDENTIALS set: $GOOGLE_APPLICATION_CREDENTIALS"
+else
+    echo "    GOOGLE_APPLICATION_CREDENTIALS not set."
+    echo "    Run 'gcloud auth application-default login' for local dev,"
+    echo "    or set GOOGLE_APPLICATION_CREDENTIALS to a service-account key path."
+    echo "    (Only required if trainer.gcs_bucket is set.)"
+fi
+
 echo ""
 echo "Setup complete."
 echo "  Train:      bash infra/run_train.sh [hydra overrides]"

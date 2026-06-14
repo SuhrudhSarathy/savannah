@@ -1,6 +1,6 @@
 defaults:
-  - model: dit_block
-  - task: pusht
+  - model: unet
+  - task: metaworld_assembly
   - _self_
 
 overfit:
