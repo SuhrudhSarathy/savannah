@@ -6,6 +6,8 @@ config:
   cameras: ["topview", "gripperPOV", "behindGripper"]
   obs_horizon: 1
   action_horizon: ${model.action_horizon}
+  image_size: 128
   batch_size: 32
   num_workers: 4
   train_fraction: 0.95
+  cache_in_memory: true

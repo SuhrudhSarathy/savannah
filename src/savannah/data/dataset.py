@@ -1,13 +1,14 @@
-import torch
-from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
-from torch.utils.data import DataLoader, Subset
-import numpy as np
-
 from dataclasses import dataclass, field
-from typing import List, Optional
 from pathlib import Path
+from typing import List, Optional
 
+import numpy as np
+import torch
 from hydra.core.config_store import ConfigStore
+from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
+from torch.utils.data import DataLoader, Dataset, Subset
+from torchvision.transforms import v2
+
 from savannah.utils import ObservationKey
 
 
@@ -22,14 +23,56 @@ class DataSetConfig:
     obs_horizon: int = 1
     action_horizon: int = 10
 
+    # Image preprocessing
+    image_size: Optional[int] = None  # resize camera images to (image_size, image_size)
+
     # Dataloader specifics
     batch_size: int = 8
     num_workers: int = 4
     train_fraction: float = 0.95
 
+    # Cache decoded (and resized) samples in memory after first access,
+    # so each sample is only decoded once across all epochs.
+    cache_in_memory: bool = False
+
 
 cs = ConfigStore.instance()
 cs.store(name="dataset_config", node=DataSetConfig)
+
+
+class _CachedDataset(Dataset):
+    """Wraps a dataset and caches the result of __getitem__ in memory.
+
+    Each worker process holds its own cache, but with persistent_workers=True
+    the cache survives across epochs, so repeated decodes of the same sample
+    are avoided after the first pass.
+
+    Image tensors (float32 in [0, 1]) are cached as uint8 to cut cache memory
+    4x, and converted back to float32 on retrieval.
+    """
+
+    def __init__(self, dataset: Dataset, image_keys: set[str]):
+        self.dataset = dataset
+        self.image_keys = image_keys
+        self._cache: dict = {}
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        if idx not in self._cache:
+            item = self.dataset[idx]
+            cached = dict(item)
+            for key in self.image_keys:
+                if key in cached:
+                    cached[key] = (cached[key] * 255).round().to(torch.uint8)
+            self._cache[idx] = cached
+
+        item = dict(self._cache[idx])
+        for key in self.image_keys:
+            if key in item:
+                item[key] = item[key].to(torch.float32) / 255.0
+        return item
 
 
 class LerobotDatasetWrapper:
@@ -60,7 +103,16 @@ class LerobotDatasetWrapper:
     @classmethod
     def create_loaders(cls, config: DataSetConfig, device: torch.device):
         deltas = cls._build_timestamps(config)
-        full_dataset = LeRobotDataset(config.repo_id, delta_timestamps=deltas)
+
+        image_transforms = None
+        if config.image_size is not None:
+            image_transforms = v2.Resize(
+                (config.image_size, config.image_size), antialias=True
+            )
+
+        full_dataset = LeRobotDataset(
+            config.repo_id, delta_timestamps=deltas, image_transforms=image_transforms
+        )
 
         num_episodes = full_dataset.num_episodes
         all_episodes = np.arange(num_episodes)
@@ -80,12 +132,27 @@ class LerobotDatasetWrapper:
         train_dataset = Subset(full_dataset, train_indices)
         val_dataset = Subset(full_dataset, val_indices)
 
+        if config.cache_in_memory:
+            image_keys = {
+                k
+                for k in deltas
+                if k != ObservationKey.state and k != ObservationKey.actions
+            }
+            train_dataset = _CachedDataset(train_dataset, image_keys)
+            val_dataset = _CachedDataset(val_dataset, image_keys)
+
+        loader_kwargs = {}
+        if config.num_workers > 0:
+            loader_kwargs["persistent_workers"] = True
+            loader_kwargs["prefetch_factor"] = 4
+
         train_loader = DataLoader(
             train_dataset,
             batch_size=config.batch_size,
             shuffle=True,
             num_workers=config.num_workers,
             pin_memory=device.type == "cuda",
+            **loader_kwargs,
         )
         val_loader = DataLoader(
             val_dataset,
@@ -93,6 +160,7 @@ class LerobotDatasetWrapper:
             shuffle=False,
             num_workers=config.num_workers,
             pin_memory=device.type == "cuda",
+            **loader_kwargs,
         )
         return train_loader, val_loader
 
