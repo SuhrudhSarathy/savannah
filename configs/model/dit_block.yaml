@@ -9,7 +9,7 @@ decoder_feedforward_dim: 512
 decoder_dropout: 0.1
 state_dim: 4
 action_dim: 4
-action_horizon: 8
+action_horizon: 32
 num_cameras: 3
 objective:
   _target_: savannah.objectives.DDIMObjective

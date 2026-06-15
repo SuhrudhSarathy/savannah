@@ -4,22 +4,22 @@
 vram_per_run_gb: 10
 
 experiments:
-  # - name: dit_block_pusht
-  #   overrides:
-  #     - model=dit_block
-  #     - trainer.checkpoint_dir=checkpoints/dit_block_pusht
-
-  # - name: flow_matching_pusht
-  #   overrides:
-  #     - model=flow_matching
-  #     - trainer.checkpoint_dir=checkpoints/flow_matching_pusht
-
-  - name: unet_pusht_ddim
+  - name: dit_block_assembly
     overrides:
-      - model=unet
-      - trainer.checkpoint_dir=checkpoints/unet_pusht_ddim
+      - model=dit_block
+      - trainer.checkpoint_dir=checkpoints/dit_block_assembly
 
-  - name: unet_pusht_flow_matching
+  - name: flow_matching_pusht
     overrides:
-      - model=unet_flow_matching
-      - trainer.checkpoint_dir=checkpoints/unet_pusht_flow_matching
+      - model=flow_matching
+      - trainer.checkpoint_dir=checkpoints/flow_matching_assembly
+
+  # - name: unet_pusht_ddim
+  #   overrides:
+  #     - model=unet
+  #     - trainer.checkpoint_dir=checkpoints/unet_pusht_ddim
+
+  # - name: unet_pusht_flow_matching
+  #   overrides:
+  #     - model=unet_flow_matching
+  #     - trainer.checkpoint_dir=checkpoints/unet_pusht_flow_matching

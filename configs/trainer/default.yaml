@@ -2,7 +2,7 @@ lr: 1e-4
 training_steps: 40000
 warmup_steps: 2000
 eval_freq: 5000
-eval_using_sim: true
+eval_using_sim: false
 sim_eval_freq: 10000
 eval_episodes: 1
 eval_execute_steps: 4
