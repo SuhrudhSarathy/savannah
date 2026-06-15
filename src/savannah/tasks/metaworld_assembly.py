@@ -13,14 +13,8 @@ from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 from savannah.tasks import BaseRobotTask
 from savannah.utils.observation import ObservationKey
 
-# MetaWorld's 39-dim `observation.state` is two stacked 18-dim frames
-# (hand_pos[3] + gripper[1] + obj_pos[3] + obj_quat[4] + obj2_pos[3] +
-# obj2_quat[4]) plus a 3-dim goal position. Of this, only the current-frame
-# hand_pos, gripper, and wrench (obj) pos, plus the goal/peg pos, are
-# informative — the quaternions, the always-zero obj2 padding, and the
-# redundant previous-frame stack are dropped, keeping 10 of 39 dims.
-STATE_KEEP_INDICES = list(range(0, 7)) + list(range(36, 39))
-
+# We only need the current ee position and the gripper state
+STATE_KEEP_INDICES = [0, 1, 2, 3]
 IMG_SIZE = (224, 224)
 
 
@@ -28,7 +22,10 @@ class MultiCameraObsWrapper(ObservationWrapper):
     """Renders extra named camera views on top of MetaWorld's proprioceptive obs."""
 
     def __init__(
-        self, env: gym.Env, camera_names: list[str], img_size: tuple[int, int] = IMG_SIZE
+        self,
+        env: gym.Env,
+        camera_names: list[str],
+        img_size: tuple[int, int] = IMG_SIZE,
     ):
         super().__init__(env)
         model = env.unwrapped.model
@@ -38,10 +35,7 @@ class MultiCameraObsWrapper(ObservationWrapper):
         self.observation_space = GymDict(
             {
                 "state": env.observation_space,
-                **{
-                    cam: Box(0, 255, (h, w, 3), dtype=np.uint8)
-                    for cam in camera_names
-                },
+                **{cam: Box(0, 255, (h, w, 3), dtype=np.uint8) for cam in camera_names},
             }
         )
 

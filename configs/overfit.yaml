@@ -1,5 +1,5 @@
 defaults:
-  - model: unet
+  - model: dit_block
   - task: metaworld_assembly
   - _self_
 

@@ -3,7 +3,7 @@ embed_dim: 128
 unet_channels: [256, 512, 1024]
 num_residual_layers: 2
 num_obs: ${task.config.obs_horizon}
-state_dim: 10
+state_dim: 4
 action_dim: 4
 action_horizon: 8
 num_cameras: 3

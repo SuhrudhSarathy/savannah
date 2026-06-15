@@ -31,7 +31,7 @@ def main(cfg: DictConfig) -> None:
     exp_logger = ExperimentLogger(
         project_name=cfg.wandb.project,
         config=OmegaConf.to_container(cfg, resolve=True),
-        use_wandb=cfg.wandb.use_wandb,
+        enable_logging=cfg.wandb.enable_logging,
     )
     device = get_device()
 

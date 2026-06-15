@@ -36,11 +36,17 @@ class TrainConfig:
     ema_decay: float = 0.9999
     checkpoint_dir: str = "checkpoints"
     artifact_name: str = "model"
-    gcs_bucket: Optional[str] = None
+
+
+@dataclass
+class GCPConfig:
+    bucket: Optional[str] = None
+    enable_model_checkpoint: bool = False
 
 
 cs = ConfigStore.instance()
 cs.store(name="train_config", node=TrainConfig)
+cs.store(name="gcp_config", node=GCPConfig)
 
 
 class PolicyTrainer:
@@ -51,11 +57,13 @@ class PolicyTrainer:
         logger: ExperimentLogger,
         config: TrainConfig,
         device: torch.device,
+        gcp_config: GCPConfig = GCPConfig(),
     ):
         self.policy = policy.to(device)
         self.task = task
         self.logger = logger
         self.config = config
+        self.gcp_config = gcp_config
         self.device = device
 
         # Setup Optimizer
@@ -207,20 +215,46 @@ class PolicyTrainer:
 
         pbar.close()
 
-        if self.config.gcs_bucket:
+        checkpoint_aliases = {
+            "best_model.ckpt": "best",
+            "best_model_success.ckpt": "best_success",
+            "latest.ckpt": "latest",
+        }
+
+        if self.logger.enable_model_checkpoint:
+            for ckpt_name, alias in checkpoint_aliases.items():
+                local_path = os.path.join(self.config.checkpoint_dir, ckpt_name)
+                if os.path.exists(local_path):
+                    self.logger.log_model_artifact(
+                        model_path=local_path,
+                        artifact_name=self.config.artifact_name,
+                        aliases=[alias],
+                    )
+        else:
+            logger.debug(
+                "wandb.enable_model_checkpoint is false — skipping W&B artifact upload."
+            )
+
+        if self.gcp_config.enable_model_checkpoint and self.gcp_config.bucket:
             gcs_prefix = f"{self.config.artifact_name}_{self.run_timestamp}"
-            for ckpt_name in ("best_model.ckpt", "best_model_success.ckpt", "latest.ckpt"):
+            for ckpt_name in checkpoint_aliases:
                 local_path = os.path.join(self.config.checkpoint_dir, ckpt_name)
                 if os.path.exists(local_path):
                     try:
                         uri = upload_file_to_gcs(
-                            local_path, self.config.gcs_bucket, f"{gcs_prefix}/{ckpt_name}"
+                            local_path, self.gcp_config.bucket, f"{gcs_prefix}/{ckpt_name}"
                         )
                         logger.success("Uploaded {} to {}", local_path, uri)
                     except Exception as e:
                         logger.error("Failed to upload {} to GCS: {}", local_path, e)
+        elif self.gcp_config.enable_model_checkpoint:
+            logger.debug(
+                "gcp.enable_model_checkpoint is true but gcp.bucket is not set — skipping GCS upload."
+            )
         else:
-            logger.debug("gcs_bucket not set — skipping checkpoint upload to GCS.")
+            logger.debug(
+                "gcp.enable_model_checkpoint is false — skipping checkpoint upload to GCS."
+            )
 
         self.logger.finish()
         print("Training Complete!")

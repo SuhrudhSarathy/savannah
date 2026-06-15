@@ -1,12 +1,17 @@
 defaults:
   - model: dit_block
-  - task: pusht
+  - task: metaworld_assembly
   - trainer: default
   - _self_
 
 wandb:
   project: savannah
-  use_wandb: true
   run_name: null
+  enable_logging: true
+  enable_model_checkpoint: false # upload best/best_success/latest checkpoints as W&B artifacts
+
+gcp:
+  bucket: null # gs://<bucket-name>, e.g. set via CLI: gcp.bucket=my-bucket
+  enable_model_checkpoint: false # upload best/best_success/latest checkpoints to GCS
 
 log_level: INFO # DEBUG | INFO | WARNING | ERROR

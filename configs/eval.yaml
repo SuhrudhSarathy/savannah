@@ -14,4 +14,4 @@ log_level: INFO  # DEBUG | INFO | WARNING | ERROR
 
 wandb:
   project: savannah
-  use_wandb: true
+  enable_logging: true

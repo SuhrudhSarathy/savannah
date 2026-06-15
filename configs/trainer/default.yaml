@@ -1,5 +1,5 @@
 lr: 1e-4
-training_steps: 75000
+training_steps: 40000
 warmup_steps: 2000
 eval_freq: 5000
 eval_using_sim: true
@@ -8,5 +8,4 @@ eval_episodes: 1
 eval_execute_steps: 4
 ema_decay: 0.9999
 checkpoint_dir: checkpoints
-artifact_name: dit_block_pusht
-gcs_bucket: null
+artifact_name: dit_block_assembly
