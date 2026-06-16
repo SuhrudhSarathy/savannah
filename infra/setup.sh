@@ -10,6 +10,22 @@ else
     echo "    uv found: $(uv --version)"
 fi
 
+echo "==> Installing FFmpeg system libraries (required by torchcodec, a lerobot dep)..."
+# torchcodec ships without bundled FFmpeg — the shared libs must be present on
+# the system at runtime.  Supported: FFmpeg 4–7.
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    sudo apt-get update -qq && sudo apt-get install -y ffmpeg
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    if command -v brew &>/dev/null; then
+        brew install ffmpeg
+    else
+        echo "    Homebrew not found — install it from https://brew.sh then re-run."
+        exit 1
+    fi
+else
+    echo "    Unsupported OS: install FFmpeg 4–7 manually before continuing."
+fi
+
 echo "==> Installing project dependencies..."
 uv sync
 
