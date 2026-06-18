@@ -25,7 +25,7 @@ from savannah.utils.log import logger, setup_logging
 from savannah.utils.logger import ExperimentLogger
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="eval")
+@hydra.main(version_base=None, config_path="../../configs", config_name="eval")
 def main(cfg: DictConfig) -> None:
     setup_logging(log_dir="logs", level=cfg.log_level)
     exp_logger = ExperimentLogger(
@@ -67,6 +67,7 @@ def main(cfg: DictConfig) -> None:
 
             if action_buffer.is_empty():
                 obs_dict = task.preprocess_observation_history(obs_history)
+                print(obs_dict[ObservationKey.images][0].shape)
                 with torch.no_grad():
                     policy_out = policy.compute_action(obs_dict)
 
@@ -76,7 +77,9 @@ def main(cfg: DictConfig) -> None:
 
             raw_action = torch.clamp(action_buffer.pop(), -1, 1)
             action_to_apply = task.postprocess_action(raw_action)
-            logger.debug("action_to_apply={}", action_to_apply)
+            logger.info(
+                "raw_action={}, action_to_apply={}", raw_action, action_to_apply
+            )
 
             raw_obs, _, terminated, truncated, info = env.step(action_to_apply)
             obs_history.append(raw_obs)

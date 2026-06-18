@@ -18,10 +18,12 @@ from omegaconf import DictConfig
 from savannah.factory import build_policy, build_task
 from savannah.utils.checkpoint import resolve_checkpoint_path
 from savannah.utils.device import get_device
+from savannah.utils.log import setup_logging
 from savannah.utils.observation import ObservationKey
 
 
 def run_dataset_episode_eval(cfg: DictConfig) -> None:
+    setup_logging(log_dir="logs", level=cfg.log_level)
     device = get_device()
     print("Using device:", device)
 
@@ -45,14 +47,17 @@ def run_dataset_episode_eval(cfg: DictConfig) -> None:
     ]
     act_timestamps = [i / dataset_config.fps for i in range(action_horizon)]
 
+    camera_keys = [f"observation.images.{cam}" for cam in dataset_config.cameras]
     delta_timestamps = {
         "observation.state": obs_timestamps,
-        "observation.image": obs_timestamps,
+        **{cam_key: obs_timestamps for cam_key in camera_keys},
         "action": act_timestamps,
     }
 
     full_dataset = LeRobotDataset(
-        dataset_config.repo_id, delta_timestamps=delta_timestamps
+        dataset_config.repo_id,
+        delta_timestamps=delta_timestamps,
+        video_backend="torchcodec",
     )
 
     target_episode = cfg.episode_index
@@ -77,38 +82,24 @@ def run_dataset_episode_eval(cfg: DictConfig) -> None:
 
         formatted = task.format_batch(batch)
 
-        # return {
-        #     ObservationKey.images: [images],
-        #     ObservationKey.state: (state - 256.0) / 512.0,
-        #     ObservationKey.gt_actions: (actions - 256.0) / 512.0,
-        # }
-
-        # Both the images and the states are noise now
-        images = [torch.zeros_like(img) for img in formatted[ObservationKey.images]]
-        formatted[ObservationKey.images] = images
-        formatted[ObservationKey.state] = torch.rand_like(
-            formatted[ObservationKey.state]
-        )
-
         with torch.no_grad():
             policy_out = policy.compute_action(formatted)
-            print(policy_out)
 
         pred_norm = policy_out.actions  # (1, action_horizon, action_dim)
         gt_norm = formatted[
             ObservationKey.gt_actions
         ]  # (1, action_horizon, action_dim)
 
-        pred_raw = (pred_norm[0, 0].cpu().numpy() * 512.0) + 256.0
-        gt_raw = (gt_norm[0, 0].cpu().numpy() * 512.0) + 256.0
+        pred_raw = task.postprocess_action(pred_norm[0, 0])
+        gt_raw = task.postprocess_action(gt_norm[0, 0])
 
         mse = torch.nn.functional.mse_loss(pred_norm, gt_norm).item()
         all_mse.append(mse)
 
         print(
             f"{step_idx:>5} | "
-            f"GT: [{gt_raw[0]:>8.2f}, {gt_raw[1]:>8.2f}]     | "
-            f"Pred: [{pred_raw[0]:>8.2f}, {pred_raw[1]:>8.2f}]   | "
+            f"GT: {np.array2string(gt_raw, precision=3, separator=', ')} | "
+            f"Pred: {np.array2string(pred_raw, precision=3, separator=', ')} | "
             f"{mse:>10.6f}"
         )
 
@@ -119,7 +110,7 @@ def run_dataset_episode_eval(cfg: DictConfig) -> None:
     )
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="eval")
+@hydra.main(version_base=None, config_path="../../configs", config_name="eval")
 def main(cfg: DictConfig) -> None:
     run_dataset_episode_eval(cfg)
 

@@ -52,7 +52,7 @@ def make_random_batch(
     }
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="overfit")
+@hydra.main(version_base=None, config_path="../../configs", config_name="overfit")
 def main(cfg: DictConfig) -> None:
     """
     Sanity check #1: can the model overfit a single batch of *random* data?

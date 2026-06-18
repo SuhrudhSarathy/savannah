@@ -1,6 +1,6 @@
 defaults:
   - model: dit_block
-  - task: metaworld_assembly
+  - task: metaworld_button_press
   - trainer: default
   - _self_
 

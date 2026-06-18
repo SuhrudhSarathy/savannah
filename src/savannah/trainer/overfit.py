@@ -22,7 +22,11 @@ def overfit_on_batch(
 
     Returns the per-step loss history.
     """
-    print(batch[ObservationKey.images][0].shape, batch[ObservationKey.state].shape, batch[ObservationKey.gt_actions].shape)
+    print(
+        batch[ObservationKey.images][0].shape,
+        batch[ObservationKey.state].shape,
+        batch[ObservationKey.gt_actions].shape,
+    )
     optimizer = torch.optim.AdamW(policy.parameters(), lr=lr, weight_decay=1e-4)
     policy.train()
 

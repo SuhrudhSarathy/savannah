@@ -1,11 +1,11 @@
 lr: 1e-4
-training_steps: 40000
+training_steps: 100000
 warmup_steps: 2000
 eval_freq: 5000
-eval_using_sim: false
+eval_using_sim: true
 sim_eval_freq: 10000
 eval_episodes: 1
-eval_execute_steps: 4
+eval_execute_steps: 32
 ema_decay: 0.9999
 checkpoint_dir: checkpoints
 artifact_name: dit_block_assembly

@@ -8,7 +8,6 @@ import torch
 from gymnasium import ObservationWrapper
 from gymnasium.spaces import Box
 from gymnasium.spaces import Dict as GymDict
-from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
 
 from savannah.tasks import BaseRobotTask
 from savannah.utils.observation import ObservationKey
@@ -16,6 +15,14 @@ from savannah.utils.observation import ObservationKey
 # We only need the current ee position and the gripper state
 STATE_KEEP_INDICES = [0, 1, 2, 3]
 IMG_SIZE = (224, 224)
+
+# Bounds from SawyerXYZEnv._HAND_SPACE (indices 0-2) and gripper_low/high (index 3).
+# These are class-level constants shared across all MT50 tasks — no env creation needed.
+_STATE_LOW = np.array([-0.525, 0.348, -0.0525, -1.0], dtype=np.float32)
+_STATE_HIGH = np.array([0.525, 1.025, 0.7, 1.0], dtype=np.float32)
+# Action space is Box([-1,-1,-1,-1], [1,1,1,1]) for all MetaWorld envs.
+_ACTION_LOW = np.array([-1.0, -1.0, -1.0, -1.0], dtype=np.float32)
+_ACTION_HIGH = np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32)
 
 
 class MultiCameraObsWrapper(ObservationWrapper):
@@ -52,46 +59,40 @@ class MultiCameraObsWrapper(ObservationWrapper):
         super().close()
 
 
-class MetaworldAssemblyTask(BaseRobotTask):
-    ENV_NAME = "assembly-v3"
-
+class MetaworldTask(BaseRobotTask):
     def __init__(self, config, device: torch.device):
         super().__init__(config, device)
 
-        stats = LeRobotDatasetMetadata(config.repo_id).stats
-        self._state_mean = torch.tensor(
-            stats["observation.state"]["mean"][STATE_KEEP_INDICES],
-            dtype=torch.float32,
-            device=device,
-        )
-        self._state_std = torch.tensor(
-            stats["observation.state"]["std"][STATE_KEEP_INDICES],
-            dtype=torch.float32,
-            device=device,
-        ).clamp_min(1e-4)
-        self._action_mean = torch.tensor(
-            stats["action"]["mean"], dtype=torch.float32, device=device
-        )
-        self._action_std = torch.tensor(
-            stats["action"]["std"], dtype=torch.float32, device=device
-        ).clamp_min(1e-4)
+        self._state_low = torch.tensor(_STATE_LOW, device=device)
+        self._state_high = torch.tensor(_STATE_HIGH, device=device)
+        self._action_low = torch.tensor(_ACTION_LOW, device=device)
+        self._action_high = torch.tensor(_ACTION_HIGH, device=device)
 
     def _make_env(self, render_mode: str) -> gym.Env:
         env = gym.make(
-            "Meta-World/MT1", env_name=self.ENV_NAME, render_mode=render_mode
+            "Meta-World/MT1", env_name=self.config.env_name, render_mode=render_mode
+        )
+        img_size = (
+            (self.config.image_size, self.config.image_size)
+            if self.config.image_size is not None
+            else IMG_SIZE
         )
         return MultiCameraObsWrapper(
-            env, camera_names=self.config.cameras, img_size=IMG_SIZE
+            env, camera_names=self.config.cameras, img_size=img_size
         )
 
     def _normalize_state(self, state: torch.Tensor) -> torch.Tensor:
-        return (state - self._state_mean) / self._state_std
+        return (state - self._state_low) / (self._state_high - self._state_low) * 2 - 1
 
     def _normalize_action(self, action: torch.Tensor) -> torch.Tensor:
-        return (action - self._action_mean) / self._action_std
+        return (action - self._action_low) / (
+            self._action_high - self._action_low
+        ) * 2 - 1
 
     def _unnormalize_action(self, action: torch.Tensor) -> torch.Tensor:
-        return action * self._action_std + self._action_mean
+        return (action + 1) / 2 * (
+            self._action_high - self._action_low
+        ) + self._action_low
 
     def format_batch(self, batch: dict) -> dict:
         state = batch["observation.state"].to(self.device)[..., STATE_KEEP_INDICES]
@@ -144,6 +145,9 @@ class MetaworldAssemblyTask(BaseRobotTask):
             obs_list = pad + obs_list
 
         return self._obs_to_tensors(obs_list)
+
+    def postprocess_chunk(self, actions: torch.Tensor) -> None:
+        return None
 
     def postprocess_action(self, action_tensor: torch.Tensor) -> np.ndarray:
         action = self._unnormalize_action(action_tensor.to(self.device))

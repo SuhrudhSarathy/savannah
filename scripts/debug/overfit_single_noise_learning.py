@@ -27,7 +27,7 @@ from savannah.utils.log import logger, setup_logging
 from savannah.utils.logger import ExperimentLogger
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="config")
+@hydra.main(version_base=None, config_path="../../configs", config_name="config")
 def main(cfg: DictConfig) -> None:
     log_path = setup_logging(log_dir="logs", level=cfg.log_level)
 

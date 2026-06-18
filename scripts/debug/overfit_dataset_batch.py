@@ -18,7 +18,7 @@ from savannah.utils.device import get_device
 from savannah.utils.log import logger, setup_logging
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="overfit")
+@hydra.main(version_base=None, config_path="../../configs", config_name="overfit")
 def main(cfg: DictConfig) -> None:
     """
     Sanity check #2: can the model overfit a single *real* batch from the
@@ -34,11 +34,17 @@ def main(cfg: DictConfig) -> None:
 
     task = build_task(cfg, device=device)
     policy = build_policy(cfg).to(device)
-    print(f"Policy params: {policy.num_params():.2f}M")
-
     train_loader = task.get_train_loader()
     raw_batch = next(iter(train_loader))
     batch = task.format_batch(raw_batch)
+
+    cfg_t = task.config
+    env_info = f"  env={cfg_t.env_name}" if cfg_t.env_name else ""
+    print(f"Policy : {policy.__class__.__name__}  ({policy.num_params():.2f}M params)")
+    print(f"Task   : {task.__class__.__name__}{env_info}  repo={cfg_t.repo_id}")
+    print(
+        f"         obs_horizon={cfg_t.obs_horizon}  action_horizon={cfg_t.action_horizon}  image_size={cfg_t.image_size}  cameras={cfg_t.cameras}"
+    )
 
     print(f"Overfitting on a single real batch for {cfg.overfit.steps} steps...")
     losses = overfit_on_batch(

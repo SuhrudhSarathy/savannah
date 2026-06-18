@@ -1,10 +1,10 @@
 _target_: savannah.tasks.metaworld.MetaworldTask
 config:
   _target_: savannah.data.dataset.DataSetConfig
-  env_name: assembly-v3
-  repo_id: suhrudhsarathy/metaworld-assembly-v3
+  env_name: button-press-v3
+  repo_id: suhrudhsarathy/metaworld-button-press-v3
   fps: 20
-  cameras: ["topview", "gripperPOV", "behindGripper"]
+  cameras: ["topview", "gripperPOV", "corner"]
   obs_horizon: 1
   action_horizon: ${model.action_horizon}
   image_size: 128

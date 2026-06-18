@@ -242,7 +242,9 @@ class PolicyTrainer:
                 if os.path.exists(local_path):
                     try:
                         uri = upload_file_to_gcs(
-                            local_path, self.gcp_config.bucket, f"{gcs_prefix}/{ckpt_name}"
+                            local_path,
+                            self.gcp_config.bucket,
+                            f"{gcs_prefix}/{ckpt_name}",
                         )
                         logger.success("Uploaded {} to {}", local_path, uri)
                     except Exception as e:

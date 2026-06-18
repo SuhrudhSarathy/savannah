@@ -1,6 +1,6 @@
 defaults:
   - model: dit_block
-  - task: metaworld_assembly
+  - task: metaworld_button_press
   - _self_
 
 overfit:

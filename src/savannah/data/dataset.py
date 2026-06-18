@@ -17,6 +17,7 @@ class DataSetConfig:
     repo_id: str
     fps: int
     root: Optional[str] = None
+    env_name: Optional[str] = None
     cameras: List[str] = field(default_factory=list)
 
     # Temporal horizons
@@ -111,7 +112,10 @@ class LerobotDatasetWrapper:
             )
 
         full_dataset = LeRobotDataset(
-            config.repo_id, delta_timestamps=deltas, image_transforms=image_transforms
+            config.repo_id,
+            delta_timestamps=deltas,
+            image_transforms=image_transforms,
+            video_backend="torchcodec",
         )
 
         num_episodes = full_dataset.num_episodes
