@@ -67,7 +67,6 @@ def main(cfg: DictConfig) -> None:
 
             if action_buffer.is_empty():
                 obs_dict = task.preprocess_observation_history(obs_history)
-                print(obs_dict[ObservationKey.images][0].shape)
                 with torch.no_grad():
                     policy_out = policy.compute_action(obs_dict)
 
@@ -77,24 +76,20 @@ def main(cfg: DictConfig) -> None:
 
             raw_action = torch.clamp(action_buffer.pop(), -1, 1)
             action_to_apply = task.postprocess_action(raw_action)
-            logger.info(
+            logger.debug(
                 "raw_action={}, action_to_apply={}", raw_action, action_to_apply
             )
 
             raw_obs, _, terminated, truncated, info = env.step(action_to_apply)
             obs_history.append(raw_obs)
-            done = terminated or truncated
+            done = terminated or truncated or task.is_success(info)
 
-        success = info.get("score", 0) > 0.95
+        success = task.is_success(info)
         successes += int(success)
         if success:
-            logger.success(
-                "Episode {} SUCCESS — score: {:.3f}", ep + 1, info.get("score", 0)
-            )
+            logger.success("Episode {} SUCCESS")
         else:
-            logger.warning(
-                "Episode {} FAIL    — score: {:.3f}", ep + 1, info.get("score", 0)
-            )
+            logger.warning("Episode {} FAIL")
 
     env.close()
     logger.info("Success rate: {}/{}", successes, cfg.num_episodes)

@@ -73,3 +73,6 @@ class BaseRobotTask(ABC):
         the raw physics values [0, 512] expected by `env.step()`.
         """
         ...
+
+    def is_success(self, info: Dict[str, Any]) -> bool:
+        return info.get("score", 0) > 0.95

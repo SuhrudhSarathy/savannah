@@ -9,10 +9,10 @@ experiments:
       - model=dit_block
       - trainer.checkpoint_dir=checkpoints/dit_block_assembly
 
-  - name: flow_matching_pusht
+  - name: dit_block_fm_assembly
     overrides:
-      - model=flow_matching
-      - trainer.checkpoint_dir=checkpoints/flow_matching_assembly
+      - model=dit_block_flow_matching
+      - trainer.checkpoint_dir=checkpoints/dit_fm_assembly
 
   # - name: unet_pusht_ddim
   #   overrides:

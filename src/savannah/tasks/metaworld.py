@@ -54,6 +54,14 @@ class MultiCameraObsWrapper(ObservationWrapper):
             frames[cam] = self._renderer.render()
         return frames
 
+    def render(self):
+        data = self.env.unwrapped.data
+        frames = []
+        for cam in self.camera_names:
+            self._renderer.update_scene(data, camera=cam)
+            frames.append(self._renderer.render())
+        return np.concatenate(frames, axis=1)  # side-by-side
+
     def close(self):
         self._renderer.close()
         super().close()
@@ -153,3 +161,6 @@ class MetaworldTask(BaseRobotTask):
         action = self._unnormalize_action(action_tensor.to(self.device))
         action = torch.clamp(action, -1.0, 1.0)
         return action.detach().cpu().numpy().reshape(-1).astype(np.float32)
+
+    def is_success(self, info: dict) -> bool:
+        return info["success"]

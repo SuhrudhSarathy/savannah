@@ -1,6 +1,7 @@
 import copy
 import math
 import os
+import signal
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
@@ -111,6 +112,13 @@ class PolicyTrainer:
         train_iter = iter(train_loader)
 
         val_loader = self.task.get_val_loader()
+
+        def _sigint_handler(sig, frame):
+            logger.warning("Interrupted at step {} — saving latest.ckpt…", self.global_step)
+            self.save_checkpoint("latest", self.best_val_loss)
+            raise SystemExit(0)
+
+        signal.signal(signal.SIGINT, _sigint_handler)
 
         # Use a flat tqdm loop based on steps, rather than epochs
         pbar = tqdm(total=self.config.training_steps, desc="Training")

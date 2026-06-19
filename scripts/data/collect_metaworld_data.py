@@ -10,7 +10,7 @@ import metaworld.policies as mw_policies
 import numpy as np
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-from savannah.tasks.metaworld_assembly import STATE_KEEP_INDICES, MultiCameraObsWrapper
+from savannah.tasks.metaworld import STATE_KEEP_INDICES, MultiCameraObsWrapper
 
 
 def parse_args() -> argparse.Namespace:
