@@ -9,3 +9,4 @@ checkpoints/
 *artifacts
 outputs/
 *logs*/
+*.mp4

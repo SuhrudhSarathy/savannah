@@ -1,5 +1,6 @@
 from collections import deque
 
+import cv2
 import gymnasium as gym
 import metaworld  # noqa: F401  (registers Meta-World/MT1 with gymnasium)
 import mujoco
@@ -55,12 +56,26 @@ class MultiCameraObsWrapper(ObservationWrapper):
         return frames
 
     def render(self):
+        main_frame = self.env.render()
+        if main_frame is None:
+            return None
+        main_h, main_w = main_frame.shape[:2]
+
         data = self.env.unwrapped.data
-        frames = []
+        thumbnails = []
         for cam in self.camera_names:
             self._renderer.update_scene(data, camera=cam)
-            frames.append(self._renderer.render())
-        return np.concatenate(frames, axis=1)  # side-by-side
+            frame = self._renderer.render().copy()
+            frame[:18] = (frame[:18] * 0.3).astype(np.uint8)
+            cv2.putText(frame, cam, (4, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+            thumbnails.append(frame)
+
+        strip = np.concatenate(thumbnails, axis=1)
+        strip_h, strip_w = strip.shape[:2]
+        new_h = int(strip_h * main_w / strip_w)
+        strip = cv2.resize(strip, (main_w, new_h))
+
+        return np.concatenate([main_frame, strip], axis=0)
 
     def close(self):
         self._renderer.close()
