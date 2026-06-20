@@ -1,27 +1,31 @@
 #!/usr/bin/env python
-"""Collect MetaWorld expert demonstrations and push them as a LeRobot dataset."""
+"""Collect ColorMatching expert demonstrations and push them as a LeRobot dataset."""
 
 from __future__ import annotations
 
 import argparse
+import random
 import warnings
 
 warnings.filterwarnings("ignore")
 
-import metaworld
-import metaworld.policies as mw_policies
+import gymnasium as gym
 import numpy as np
+import torch
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from tqdm import tqdm
 
-from savannah.tasks.metaworld import STATE_KEEP_INDICES, MultiCameraObsWrapper
+import savannah.envs  # noqa: F401 — triggers @register_env
+from savannah.envs import VectorizedScriptedPolicy
+
+COLORS = ["red", "green", "blue"]
+CAMERAS = ["hand_camera", "front_cam", "side_cam"]
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Collect MetaWorld expert demonstrations and push to HuggingFace Hub."
+        description="Collect ColorMatching expert demonstrations and push to HuggingFace Hub."
     )
-    parser.add_argument("--task", type=str, default="assembly-v3")
     parser.add_argument(
         "--num-episodes",
         type=int,
@@ -35,15 +39,16 @@ def parse_args() -> argparse.Namespace:
         help="Max total rollout attempts (default: 3 * num_episodes)",
     )
     parser.add_argument(
-        "--cameras", nargs="+", default=["topview", "gripperPOV", "corner"]
+        "--cameras", nargs="+", default=CAMERAS,
     )
     parser.add_argument("--image-size", type=int, default=128)
     parser.add_argument("--fps", type=int, default=20)
+    parser.add_argument("--max-steps", type=int, default=500)
     parser.add_argument(
         "--repo-id",
         type=str,
         required=True,
-        help="HuggingFace Hub repo id, e.g. myuser/assembly-v3-expert",
+        help="HuggingFace Hub repo id, e.g. myuser/color-matching-expert",
     )
     parser.add_argument("--push-to-hub", action="store_true", default=False)
     parser.add_argument(
@@ -68,13 +73,21 @@ def build_features(cameras: list[str], image_size: int) -> dict:
     features = {
         "observation.state": {
             "dtype": "float32",
-            "shape": (4,),
-            "names": ["ee_x", "ee_y", "ee_z", "gripper"],
+            "shape": (8,),
+            "names": [
+                "ee_x", "ee_y", "ee_z",
+                "ee_qw", "ee_qx", "ee_qy", "ee_qz",
+                "gripper",
+            ],
         },
         "action": {
             "dtype": "float32",
-            "shape": (4,),
-            "names": ["dx", "dy", "dz", "gripper_ctrl"],
+            "shape": (7,),
+            "names": [
+                "dx", "dy", "dz",
+                "drot_x", "drot_y", "drot_z",
+                "gripper_ctrl",
+            ],
         },
     }
     for cam in cameras:
@@ -86,60 +99,53 @@ def build_features(cameras: list[str], image_size: int) -> dict:
     return features
 
 
-def make_env(
-    task_name: str,
-    seed: int,
-    cameras: list[str],
-    image_size: int,
-) -> tuple:
-    mt1 = metaworld.MT1(task_name, seed=seed)
-    raw_env = mt1.train_classes[task_name](render_mode="rgb_array")
-    raw_env._freeze_rand_vec = False
-    wrapped = MultiCameraObsWrapper(
-        raw_env, camera_names=cameras, img_size=(image_size, image_size)
-    )
-    return wrapped, raw_env, mt1
-
-
 def collect_episode(
-    wrapped_env,
+    env,
     raw_env,
-    mt1,
-    expert_policy,
-    task_name: str,
+    pick_color: str,
+    place_color: str,
     cameras: list[str],
-    max_steps: int = 500,
+    max_steps: int,
 ) -> tuple[list[dict], bool]:
-    task_idx = np.random.randint(len(mt1.train_tasks))
-    raw_env.set_task(mt1.train_tasks[task_idx])
-    obs_dict, _ = wrapped_env.reset()
+    obs, _ = env.reset(options={"pick_color": pick_color, "place_color": place_color})
 
-    task_str = f"metaworld {task_name} expert demonstration"
+    policy = VectorizedScriptedPolicy(
+        num_envs=1,
+        device=raw_env.device,
+        pick_color=pick_color,
+        place_color=place_color,
+    )
+
+    task_str = f"Pick the {pick_color} block and place it in the {place_color} bin"
     frames: list[dict] = []
     success = False
 
     for _ in range(max_steps):
-        raw_obs = obs_dict["state"]
-        action = np.clip(expert_policy.get_action(raw_obs), -1.0, 1.0).astype(
-            np.float32
-        )
+        tcp_pose = raw_env.agent.tcp.pose.raw_pose[0].cpu().numpy()
+        qpos = raw_env.agent.robot.get_qpos()[0].cpu().numpy()
+        gripper_width = np.array([qpos[-2] + qpos[-1]], dtype=np.float32)
+        state = np.concatenate([tcp_pose, gripper_width]).astype(np.float32)
+
+        action = policy.act(raw_env)
+        action_np = action[0].cpu().numpy().astype(np.float32)
 
         frame: dict = {
-            "observation.state": raw_obs[STATE_KEEP_INDICES].astype(np.float32),
-            "action": action,
+            "observation.state": state,
+            "action": action_np,
             "task": task_str,
         }
         for cam in cameras:
-            frame[f"observation.images.{cam}"] = obs_dict[cam]
+            img = obs["sensor_data"][cam]["rgb"][0].cpu().numpy()
+            frame[f"observation.images.{cam}"] = img[..., :3]
 
         frames.append(frame)
 
-        obs_dict, _, terminated, truncated, info = wrapped_env.step(action)
+        obs, _, terminated, truncated, info = env.step(action)
 
-        if info.get("success", 0) >= 0.5:
+        if info["success"].any():
             success = True
             break
-        if truncated or terminated:
+        if terminated.any() or truncated.any():
             break
 
     return frames, success
@@ -166,25 +172,27 @@ def main() -> None:
         f"--image-size must be even (got {args.image_size})"
     )
 
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+
     max_attempts = args.max_attempts or 3 * args.num_episodes
-
-    if args.task not in mw_policies.ENV_POLICY_MAP:
-        available = sorted(mw_policies.ENV_POLICY_MAP.keys())
-        raise ValueError(f"No expert policy for '{args.task}'. Available: {available}")
-
-    expert = mw_policies.ENV_POLICY_MAP[args.task]()
     features = build_features(args.cameras, args.image_size)
 
     dataset = LeRobotDataset.create(
         repo_id=args.repo_id,
         fps=args.fps,
         features=features,
-        robot_type="sawyer",
+        robot_type="panda",
     )
 
-    wrapped_env, raw_env, mt1 = make_env(
-        args.task, args.seed, args.cameras, args.image_size
+    env = gym.make(
+        "ColorMatching-v1",
+        num_envs=1,
+        obs_mode="rgb",
+        control_mode="pd_ee_delta_pose",
     )
+    raw_env = env.unwrapped
 
     successes = 0
     attempts = 0
@@ -195,8 +203,11 @@ def main() -> None:
     try:
         while successes < args.num_episodes and attempts < max_attempts:
             attempts += 1
+            pick_color = random.choice(COLORS)
+            place_color = random.choice(COLORS)
+
             frames, success = collect_episode(
-                wrapped_env, raw_env, mt1, expert, args.task, args.cameras
+                env, raw_env, pick_color, place_color, args.cameras, args.max_steps,
             )
 
             if success or args.keep_failed:
@@ -211,11 +222,14 @@ def main() -> None:
             else:
                 failed += 1
 
-            pbar.set_postfix(failed=failed, attempts=attempts)
+            pbar.set_postfix(
+                pick=pick_color, place=place_color,
+                failed=failed, attempts=attempts,
+            )
 
     finally:
         pbar.close()
-        wrapped_env.close()
+        env.close()
 
     if args.push_to_hub:
         tqdm.write(f"Pushing to {args.repo_id} ...")

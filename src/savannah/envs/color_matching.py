@@ -4,6 +4,7 @@ import numpy as np
 import sapien
 import torch
 from mani_skill.agents.robots import Fetch, Panda, WidowX250S
+from mani_skill.agents.robots.panda.panda_wristcam import PandaWristCam
 from mani_skill.envs.sapien_env import BaseEnv
 from mani_skill.sensors.camera import CameraConfig
 from mani_skill.utils import sapien_utils
@@ -23,24 +24,24 @@ class ColorMatchingEnv(BaseEnv):
     corresponding colored shallow box (bin) on the table.
     """
 
-    SUPPORTED_ROBOTS = ["panda", "fetch", "widowx250s"]
-    agent: Union[Panda, Fetch, WidowX250S]
+    SUPPORTED_ROBOTS = ["panda_wristcam", "panda", "fetch", "widowx250s"]
+    agent: Union[PandaWristCam, Panda, Fetch, WidowX250S]
 
     cube_half_size = 0.02
     bin_half_size = 0.05
 
     box_slots = [
-        ((-0.4, -0.75), (-0.3, -0.25)),
-        ((-0.4, -0.25), (-0.3, 0.25)),
-        ((-0.4, 0.25), (-0.3, 0.75)),
+        ((-0.3, -0.45), (-0.2, -0.15)),
+        ((-0.3, -0.15), (-0.2, 0.15)),
+        ((-0.3, 0.15), (-0.2, 0.45)),
     ]
     bin_slots = [
-        ((-0.2, -0.75), (-0.1, -0.25)),
-        ((-0.2, -0.25), (-0.1, 0.25)),
-        ((-0.2, 0.25), (-0.1, 0.75)),
+        ((-0.1, -0.45), (0.05, -0.15)),
+        ((-0.1, -0.15), (0.05, 0.15)),
+        ((-0.1, 0.15), (0.05, 0.45)),
     ]
 
-    def __init__(self, *args, robot_uids="panda", robot_init_qpos_noise=0.02, **kwargs):
+    def __init__(self, *args, robot_uids="panda_wristcam", robot_init_qpos_noise=0.02, **kwargs):
         self.robot_init_qpos_noise = robot_init_qpos_noise
         self.colors = {
             "red": [1.0, 0.0, 0.0, 1.0],
@@ -121,6 +122,9 @@ class ColorMatchingEnv(BaseEnv):
             b = len(env_idx)
             self.table_scene.initialize(env_idx)
 
+            self.pick_color = options.get("pick_color", "red")
+            self.place_color = options.get("place_color", "red")
+
             color_names = list(self.colors.keys())
             n = len(color_names)
 
@@ -141,7 +145,7 @@ class ColorMatchingEnv(BaseEnv):
                             bc,
                             self.box_slots[slot_idx],
                             self.cube_half_size,
-                            np.pi,
+                            np.pi / 6,
                         )
                         c_xyz_all[cube_mask] = xyz
                         c_quat_all[cube_mask] = quat
@@ -166,16 +170,15 @@ class ColorMatchingEnv(BaseEnv):
                 )
 
     def evaluate(self) -> Dict[str, torch.Tensor]:
-        success_all = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
-        for color_name in self.colors.keys():
-            cube_pos = self.cubes[color_name].pose.p
-            bin_pos = self.bins[color_name].pose.p
-            horizontal_dist = torch.linalg.norm(
-                cube_pos[..., :2] - bin_pos[..., :2], axis=1
-            )
-            is_matched = horizontal_dist < self.bin_half_size
-            success_all = success_all & is_matched
-        return {"success": success_all}
+        cube_pos = self.cubes[self.pick_color].pose.p
+        bin_pos = self.bins[self.place_color].pose.p
+        horizontal_dist = torch.linalg.norm(
+            cube_pos[..., :2] - bin_pos[..., :2], axis=1
+        )
+        on_bin_z = cube_pos[..., 2] < (bin_pos[..., 2] + self.cube_half_size * 2 + 0.02)
+        print(on_bin_z)
+        success = (horizontal_dist < self.bin_half_size) & on_bin_z
+        return {"success": success}
 
     def _get_obs_extra(self, info: dict) -> Dict[str, torch.Tensor]:
         obs = dict(tcp_pose=self.agent.tcp.pose.raw_pose)
