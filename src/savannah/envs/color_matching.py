@@ -16,7 +16,7 @@ from mani_skill.utils.structs.types import Array, GPUMemoryConfig, SimConfig
 from transforms3d.euler import euler2quat
 
 
-@register_env("ColorMatching-v1", max_episode_steps=200)
+@register_env("ColorMatching-v1", max_episode_steps=500)
 class ColorMatchingEnv(BaseEnv):
     """
     **Task Description:**
@@ -29,6 +29,7 @@ class ColorMatchingEnv(BaseEnv):
 
     cube_half_size = 0.02
     bin_half_size = 0.05
+    bin_thickness = 0.005
 
     box_slots = [
         ((-0.3, -0.45), (-0.2, -0.15)),
@@ -156,7 +157,7 @@ class ColorMatchingEnv(BaseEnv):
                         xyz, quat = self._random_pose_in_slot(
                             bb,
                             self.bin_slots[slot_idx],
-                            0.005,
+                            self.bin_thickness,
                             np.pi / 6,
                         )
                         b_xyz_all[bin_mask] = xyz
@@ -175,8 +176,7 @@ class ColorMatchingEnv(BaseEnv):
         horizontal_dist = torch.linalg.norm(
             cube_pos[..., :2] - bin_pos[..., :2], axis=1
         )
-        on_bin_z = cube_pos[..., 2] < (bin_pos[..., 2] + self.cube_half_size * 2 + 0.02)
-        print(on_bin_z)
+        on_bin_z = cube_pos[..., 2] <= 1.01 * (bin_pos[..., 2] + self.cube_half_size + self.bin_thickness)
         success = (horizontal_dist < self.bin_half_size) & on_bin_z
         return {"success": success}
 

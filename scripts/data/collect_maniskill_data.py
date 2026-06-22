@@ -120,7 +120,7 @@ def collect_episode(
     frames: list[dict] = []
     success = False
 
-    for _ in range(max_steps):
+    for i in range(max_steps):
         tcp_pose = raw_env.agent.tcp.pose.raw_pose[0].cpu().numpy()
         qpos = raw_env.agent.robot.get_qpos()[0].cpu().numpy()
         gripper_width = np.array([qpos[-2] + qpos[-1]], dtype=np.float32)
@@ -141,6 +141,7 @@ def collect_episode(
         frames.append(frame)
 
         obs, _, terminated, truncated, info = env.step(action)
+
 
         if info["success"].any():
             success = True

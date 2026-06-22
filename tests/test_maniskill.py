@@ -34,8 +34,9 @@ if __name__ == "__main__":
             obs, reward, terminated, truncated, info = env.step(action)
             env.render()
 
+            print(info["success"])
+
             if info["success"].any():
                 print(f"Success accomplished at step {step}!")
                 break
-
     env.close()
