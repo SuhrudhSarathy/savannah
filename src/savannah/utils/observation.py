@@ -7,3 +7,4 @@ class ObservationKey(StrEnum):
     gt_actions = "gt_action"
     actions = "action"
     time = "time"
+    language = "observation.language"  # (B, N_text) tokenized text for language conditioning

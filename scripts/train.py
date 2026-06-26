@@ -1,3 +1,7 @@
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import sys
 
 try:
@@ -16,7 +20,7 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 from savannah.factory import build_policy, build_task
-from savannah.trainer.trainer import GCPConfig, PolicyTrainer, TrainConfig
+from savannah.trainer.trainer import HFConfig, PolicyTrainer, TrainConfig
 from savannah.utils.device import get_device
 from savannah.utils.log import logger, setup_logging
 from savannah.utils.logger import ExperimentLogger
@@ -39,7 +43,7 @@ def main(cfg: DictConfig) -> None:
     logger.info("Policy params: {:,}", policy.num_params())
 
     train_config = TrainConfig(**cfg.trainer)
-    gcp_config = GCPConfig(**cfg.gcp)
+    hf_config = HFConfig(**cfg.hf)
     exp_logger = ExperimentLogger(
         project_name=cfg.wandb.project,
         config=OmegaConf.to_container(cfg, resolve=True),
@@ -48,7 +52,7 @@ def main(cfg: DictConfig) -> None:
         run_name=cfg.wandb.run_name,
     )
 
-    trainer = PolicyTrainer(policy, task, exp_logger, train_config, device, gcp_config)
+    trainer = PolicyTrainer(policy, task, exp_logger, train_config, device, hf_config)
     trainer.train()
 
     exp_logger.finish()

@@ -18,7 +18,7 @@ from savannah.trainer.ema import EMA
 from savannah.trainer.scheduler import get_custom_scheduler
 from savannah.utils.device import get_device
 from savannah.utils.eval_and_log import evaluate_and_log
-from savannah.utils.gcs import upload_file_to_gcs
+from savannah.utils.hf import push_checkpoint_to_hub
 from savannah.utils.log import logger
 from savannah.utils.logger import ExperimentLogger
 from savannah.utils.observation import ObservationKey
@@ -40,14 +40,14 @@ class TrainConfig:
 
 
 @dataclass
-class GCPConfig:
-    bucket: Optional[str] = None
-    enable_model_checkpoint: bool = False
+class HFConfig:
+    repo_id: Optional[str] = None
+    push_to_hub: bool = False
 
 
 cs = ConfigStore.instance()
 cs.store(name="train_config", node=TrainConfig)
-cs.store(name="gcp_config", node=GCPConfig)
+cs.store(name="hf_config", node=HFConfig)
 
 
 class PolicyTrainer:
@@ -58,13 +58,13 @@ class PolicyTrainer:
         logger: ExperimentLogger,
         config: TrainConfig,
         device: torch.device,
-        gcp_config: GCPConfig = GCPConfig(),
+        hf_config: HFConfig = HFConfig(),
     ):
         self.policy = policy.to(device)
         self.task = task
         self.logger = logger
         self.config = config
-        self.gcp_config = gcp_config
+        self.hf_config = hf_config
         self.device = device
 
         # Setup Optimizer
@@ -182,7 +182,7 @@ class PolicyTrainer:
                 self.save_checkpoint("latest", avg_val_loss)
                 if avg_val_loss < self.best_val_loss:
                     self.best_val_loss = avg_val_loss
-                    self.save_checkpoint("best_model", avg_val_loss)
+                    self.save_checkpoint("best_loss", avg_val_loss)
                     logger.success("New best val loss: {:.6f}", self.best_val_loss)
 
             # 8. Live sim eval & video upload (own cadence — typically much rarer
@@ -213,7 +213,7 @@ class PolicyTrainer:
 
                 if success_rate > self.best_success_rate:
                     self.best_success_rate = success_rate
-                    self.save_checkpoint("best_model_success", success_rate)
+                    self.save_checkpoint("best_success", success_rate)
                     logger.success(
                         "New best success rate: {:.3f}", self.best_success_rate
                     )
@@ -223,48 +223,45 @@ class PolicyTrainer:
 
         pbar.close()
 
-        checkpoint_aliases = {
-            "best_model.ckpt": "best",
-            "best_model_success.ckpt": "best_success",
-            "latest.ckpt": "latest",
-        }
+        checkpoint_names = ["best_loss.ckpt", "best_success.ckpt", "latest.ckpt"]
 
         if self.logger.enable_model_checkpoint:
-            for ckpt_name, alias in checkpoint_aliases.items():
+            aliases = {"best_loss.ckpt": "best", "best_success.ckpt": "best_success", "latest.ckpt": "latest"}
+            for ckpt_name in checkpoint_names:
                 local_path = os.path.join(self.config.checkpoint_dir, ckpt_name)
                 if os.path.exists(local_path):
                     self.logger.log_model_artifact(
                         model_path=local_path,
                         artifact_name=self.config.artifact_name,
-                        aliases=[alias],
+                        aliases=[aliases[ckpt_name]],
                     )
         else:
             logger.debug(
                 "wandb.enable_model_checkpoint is false — skipping W&B artifact upload."
             )
 
-        if self.gcp_config.enable_model_checkpoint and self.gcp_config.bucket:
-            gcs_prefix = f"{self.config.artifact_name}_{self.run_timestamp}"
-            for ckpt_name in checkpoint_aliases:
+        if self.hf_config.push_to_hub and self.hf_config.repo_id:
+            metrics = {
+                "best_val_loss": self.best_val_loss,
+                "best_success_rate": self.best_success_rate,
+            }
+            for ckpt_name in checkpoint_names:
                 local_path = os.path.join(self.config.checkpoint_dir, ckpt_name)
                 if os.path.exists(local_path):
                     try:
-                        uri = upload_file_to_gcs(
-                            local_path,
-                            self.gcp_config.bucket,
-                            f"{gcs_prefix}/{ckpt_name}",
+                        commit_hash = push_checkpoint_to_hub(
+                            checkpoint_path=local_path,
+                            repo_id=self.hf_config.repo_id,
+                            wandb_run_id=self.logger.run_id or "N/A",
+                            wandb_url=self.logger.run_url or "N/A",
+                            metrics=metrics,
                         )
-                        logger.success("Uploaded {} to {}", local_path, uri)
+                        self.logger.log_hf_push(self.hf_config.repo_id, commit_hash)
+                        logger.success("Pushed {} to HF Hub (commit: {})", ckpt_name, commit_hash)
                     except Exception as e:
-                        logger.error("Failed to upload {} to GCS: {}", local_path, e)
-        elif self.gcp_config.enable_model_checkpoint:
-            logger.debug(
-                "gcp.enable_model_checkpoint is true but gcp.bucket is not set — skipping GCS upload."
-            )
+                        logger.error("Failed to push {} to HF Hub: {}", ckpt_name, e)
         else:
-            logger.debug(
-                "gcp.enable_model_checkpoint is false — skipping checkpoint upload to GCS."
-            )
+            logger.debug("hf.push_to_hub is false — skipping HF Hub upload.")
 
         self.logger.finish()
         print("Training Complete!")

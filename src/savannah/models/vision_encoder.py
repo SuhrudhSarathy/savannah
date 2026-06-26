@@ -13,8 +13,5 @@ class VisionEncoder(nn.Module):
         self.proj = nn.Linear(backbone.out_channels, embed_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        features = self.backbone(x)  # (B, out_channels)
-
-        features = self.proj(features)  # (B, embed_dim)
-
-        return features.unsqueeze(1)  # (B, 1, embed_dim)
+        features = self.backbone(x)   # (B, N, out_channels)
+        return self.proj(features)    # (B, N, embed_dim)

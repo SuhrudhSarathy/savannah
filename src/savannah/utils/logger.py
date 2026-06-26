@@ -17,8 +17,13 @@ class ExperimentLogger:
         self.enable_logging = enable_logging
         self.enable_model_checkpoint = enable_model_checkpoint
 
+        self.run_id: Optional[str] = None
+        self.run_url: Optional[str] = None
+
         if self.enable_logging:
             wandb.init(project=project_name, name=run_name, config=config)
+            self.run_id = wandb.run.id
+            self.run_url = wandb.run.url
         else:
             logger.info("W&B disabled — running in local-only mode.")
 
@@ -71,6 +76,11 @@ class ExperimentLogger:
             logger.success("Artifact '{}' uploaded successfully.", artifact_name)
         except Exception as e:
             logger.error("Failed to upload artifact '{}': {}", artifact_name, e)
+
+    def log_hf_push(self, repo_id: str, commit_hash: str):
+        if self.enable_logging:
+            wandb.run.summary["hf_repo"] = repo_id
+            wandb.run.summary["hf_commit"] = commit_hash
 
     def finish(self):
         if self.enable_logging:

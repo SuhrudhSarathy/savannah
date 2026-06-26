@@ -128,6 +128,11 @@ class AdaLN(nn.Module):
 
 
 class FlowMatchingPolicy(Policy):
+    """
+    Deprecated. Use ModularPolicy + CrossAttentionActionHead + ConditionEncoder instead.
+    This class remains for checkpoint compatibility only and will be removed.
+    """
+
     def __init__(
         self,
         embed_dim: int,
@@ -141,6 +146,12 @@ class FlowMatchingPolicy(Policy):
         objective: PolicyObjective,
         num_cameras: int = 1,
     ):
+        import warnings
+        warnings.warn(
+            "FlowMatchingPolicy is deprecated. Use ModularPolicy + CrossAttentionActionHead instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         super().__init__()
 
         self.embed_dim = embed_dim

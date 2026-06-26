@@ -130,6 +130,11 @@ class DecoderBlock(nn.Module):
 
 
 class DiTBlockPolicy(Policy):
+    """
+    Deprecated. Use ModularPolicy + DiTActionHead + ConditionEncoder instead.
+    This class remains for checkpoint compatibility only and will be removed.
+    """
+
     def __init__(
         self,
         embed_dim: int,
@@ -147,6 +152,12 @@ class DiTBlockPolicy(Policy):
         vision_encoder: VisionEncoder,
         objective: PolicyObjective,
     ):
+        import warnings
+        warnings.warn(
+            "DiTBlockPolicy is deprecated. Use ModularPolicy + DiTActionHead instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         super().__init__()
 
         self.embed_dim = embed_dim

@@ -49,7 +49,7 @@ class ResNetBackbone(VisionFeatureExtractor):
         return self._out_channels
 
     def forward(self, x):
-        return self.module(x)
+        return self.module(x).unsqueeze(1)  # (B, out_channels) -> (B, 1, out_channels)
 
     def replace_bn_with_gn(self, model, num_groups=32):
         for name, module in model.named_children():

@@ -10,8 +10,8 @@ wandb:
   enable_logging: true
   enable_model_checkpoint: false # upload best/best_success/latest checkpoints as W&B artifacts
 
-gcp:
-  bucket: null # gs://<bucket-name>, e.g. set via CLI: gcp.bucket=my-bucket
-  enable_model_checkpoint: false # upload best/best_success/latest checkpoints to GCS
+hf:
+  repo_id: null # e.g. set via CLI: hf.repo_id=username/my-policy
+  push_to_hub: false
 
 log_level: INFO # DEBUG | INFO | WARNING | ERROR
