@@ -1,8 +1,12 @@
-# pixi environments
-*/__pycache__/*
+.env
+*__pycache__*
 .DS_Store
 runs/
-data/
 wandb/
 checkpoints/
-videos/
+*videos*/
+*.egg-info
+*artifacts
+outputs/
+*logs*/
+*.mp4

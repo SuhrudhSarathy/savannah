@@ -1,0 +1,59 @@
+[project]
+name = "savannah"
+version = "0.1.0"
+description = "Robot Learning models in the wild"
+authors = [
+  {name = "Suhrudh S", email = "suhrudhsarathy@gmail.com"},
+]
+readme = "README.md"
+requires-python = "==3.12.*"
+dependencies = [
+    "einops",
+    "diffusers",
+    "transformers",
+    "hydra-core",
+    "omegaconf",
+    "wandb",
+    "wandb[media]",
+    "tqdm",
+    "pillow",
+    "imageio",
+    "matplotlib",
+    "lerobot",
+    "metaworld",
+    "gym-pusht",
+    "pymunk==6.11.1",
+    "loguru",
+    "google-cloud-storage>=3.11.0",
+    "mani-skill>=3.0.1",
+    "pin; sys_platform == 'darwin'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+    "pre-commit",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]   # looks for packages inside src/
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["A", "B", "E", "F", "I", "RUF", "W"]
+ignore = ["E203", "E501", "B006"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402", "F401", "F403"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

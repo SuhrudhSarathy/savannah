@@ -1,0 +1,18 @@
+_target_: savannah.models.flow_matching.FlowMatchingPolicy
+embed_dim: 128
+num_attn_heads: 4
+feedforward_dim: 512
+num_blocks: 4
+state_dim: 4
+action_dim: 4
+action_horizon: 32
+num_cameras: 3
+objective:
+  _target_: savannah.objectives.FlowMatchingObjective
+  inference_steps: 10
+vision_encoder:
+  _target_: savannah.models.vision_encoder.VisionEncoder
+  embed_dim: ${model.embed_dim}
+  backbone:
+    _target_: savannah.models.backbones.resnet_backbone.ResNetBackbone
+    out_channels: 96

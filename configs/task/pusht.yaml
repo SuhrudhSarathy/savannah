@@ -1,0 +1,11 @@
+_target_: savannah.tasks.pusht.PushTTask
+config:
+  _target_: savannah.data.dataset.DataSetConfig
+  repo_id: lerobot/pusht
+  fps: 10
+  cameras: ["image"]
+  obs_horizon: 2
+  action_horizon: ${model.action_horizon}
+  batch_size: 32
+  num_workers: 4
+  train_fraction: 0.95

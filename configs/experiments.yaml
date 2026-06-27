@@ -1,0 +1,25 @@
+# Template for multi_run.py
+# Run: uv run python scripts/multi_run.py configs/experiments.yaml
+
+vram_per_run_gb: 10
+
+experiments:
+  - name: dit_block_assembly
+    overrides:
+      - model=dit_block
+      - trainer.checkpoint_dir=checkpoints/dit_block_assembly
+
+  - name: dit_block_fm_assembly
+    overrides:
+      - model=dit_block_flow_matching
+      - trainer.checkpoint_dir=checkpoints/dit_fm_assembly
+
+  # - name: unet_pusht_ddim
+  #   overrides:
+  #     - model=unet
+  #     - trainer.checkpoint_dir=checkpoints/unet_pusht_ddim
+
+  # - name: unet_pusht_flow_matching
+  #   overrides:
+  #     - model=unet_flow_matching
+  #     - trainer.checkpoint_dir=checkpoints/unet_pusht_flow_matching

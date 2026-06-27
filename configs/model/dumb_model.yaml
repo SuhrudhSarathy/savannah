@@ -1,0 +1,4 @@
+_target_: savannah.models.dumb_model.DumbPolicy
+input_dim: 2
+output_dim: 2
+embed_dim: 64
