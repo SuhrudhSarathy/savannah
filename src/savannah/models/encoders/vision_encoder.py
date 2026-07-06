@@ -4,6 +4,11 @@ import torch.nn as nn
 
 
 class VisionEncoder(nn.Module):
+    """
+    Job of vision encoder is to return vision tokens
+    Shape transform: (B, C, H, W) -> (B, T_V, EmbedDim)
+    """
+
     def __init__(self, backbone: VisionFeatureExtractor, embed_dim: int):
         super().__init__()
         self.backbone = backbone

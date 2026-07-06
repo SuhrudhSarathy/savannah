@@ -67,7 +67,16 @@ class MultiCameraObsWrapper(ObservationWrapper):
             self._renderer.update_scene(data, camera=cam)
             frame = self._renderer.render().copy()
             frame[:18] = (frame[:18] * 0.3).astype(np.uint8)
-            cv2.putText(frame, cam, (4, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.putText(
+                frame,
+                cam,
+                (4, 14),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                (255, 255, 255),
+                1,
+                cv2.LINE_AA,
+            )
             thumbnails.append(frame)
 
         strip = np.concatenate(thumbnails, axis=1)

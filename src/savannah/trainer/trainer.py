@@ -114,7 +114,9 @@ class PolicyTrainer:
         val_loader = self.task.get_val_loader()
 
         def _sigint_handler(sig, frame):
-            logger.warning("Interrupted at step {} — saving latest.ckpt…", self.global_step)
+            logger.warning(
+                "Interrupted at step {} — saving latest.ckpt…", self.global_step
+            )
             self.save_checkpoint("latest", self.best_val_loss)
             raise SystemExit(0)
 

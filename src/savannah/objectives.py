@@ -55,7 +55,9 @@ class FlowMatchingObjective(PolicyObjective):
         x_t = (1 - t.view(B, 1, 1)) * x_0 + t.view(B, 1, 1) * x_1
         target = x_1 - x_0
 
-        obs[ObservationKey.time] = t
+        obs[ObservationKey.time] = (
+            t * 100.0
+        )  # Scale this to make sense in TimeEmbedding
         pred_vel = model.forward(obs, noisy_actions=x_t).actions
         loss = F.mse_loss(pred_vel, target)
         return loss
@@ -71,7 +73,9 @@ class FlowMatchingObjective(PolicyObjective):
             dt = 1.0 / self.inference_steps
 
             for i in range(self.inference_steps):
-                obs[ObservationKey.time] = torch.full((B,), i * dt, device=device)
+                obs[ObservationKey.time] = torch.full(
+                    (B,), i * dt * 100.0, device=device
+                )  # Scale this to make sense in TimeEmbedding
                 x_t = x_t + model.forward(obs, noisy_actions=x_t).actions * dt
 
             return PolicyOutput(actions=x_t)

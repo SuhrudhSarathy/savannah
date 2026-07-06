@@ -39,7 +39,9 @@ def parse_args() -> argparse.Namespace:
         help="Max total rollout attempts (default: 3 * num_episodes)",
     )
     parser.add_argument(
-        "--cameras", nargs="+", default=CAMERAS,
+        "--cameras",
+        nargs="+",
+        default=CAMERAS,
     )
     parser.add_argument("--image-size", type=int, default=128)
     parser.add_argument("--fps", type=int, default=20)
@@ -75,8 +77,13 @@ def build_features(cameras: list[str], image_size: int) -> dict:
             "dtype": "float32",
             "shape": (8,),
             "names": [
-                "ee_x", "ee_y", "ee_z",
-                "ee_qw", "ee_qx", "ee_qy", "ee_qz",
+                "ee_x",
+                "ee_y",
+                "ee_z",
+                "ee_qw",
+                "ee_qx",
+                "ee_qy",
+                "ee_qz",
                 "gripper",
             ],
         },
@@ -84,8 +91,12 @@ def build_features(cameras: list[str], image_size: int) -> dict:
             "dtype": "float32",
             "shape": (7,),
             "names": [
-                "dx", "dy", "dz",
-                "drot_x", "drot_y", "drot_z",
+                "dx",
+                "dy",
+                "dz",
+                "drot_x",
+                "drot_y",
+                "drot_z",
                 "gripper_ctrl",
             ],
         },
@@ -141,7 +152,6 @@ def collect_episode(
         frames.append(frame)
 
         obs, _, terminated, truncated, info = env.step(action)
-
 
         if info["success"].any():
             success = True
@@ -208,7 +218,12 @@ def main() -> None:
             place_color = random.choice(COLORS)
 
             frames, success = collect_episode(
-                env, raw_env, pick_color, place_color, args.cameras, args.max_steps,
+                env,
+                raw_env,
+                pick_color,
+                place_color,
+                args.cameras,
+                args.max_steps,
             )
 
             if success or args.keep_failed:
@@ -224,8 +239,10 @@ def main() -> None:
                 failed += 1
 
             pbar.set_postfix(
-                pick=pick_color, place=place_color,
-                failed=failed, attempts=attempts,
+                pick=pick_color,
+                place=place_color,
+                failed=failed,
+                attempts=attempts,
             )
 
     finally:

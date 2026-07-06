@@ -42,7 +42,9 @@ class ColorMatchingEnv(BaseEnv):
         ((-0.1, 0.15), (0.05, 0.45)),
     ]
 
-    def __init__(self, *args, robot_uids="panda_wristcam", robot_init_qpos_noise=0.02, **kwargs):
+    def __init__(
+        self, *args, robot_uids="panda_wristcam", robot_init_qpos_noise=0.02, **kwargs
+    ):
         self.robot_init_qpos_noise = robot_init_qpos_noise
         self.colors = {
             "red": [1.0, 0.0, 0.0, 1.0],
@@ -176,7 +178,9 @@ class ColorMatchingEnv(BaseEnv):
         horizontal_dist = torch.linalg.norm(
             cube_pos[..., :2] - bin_pos[..., :2], axis=1
         )
-        on_bin_z = cube_pos[..., 2] <= 1.01 * (bin_pos[..., 2] + self.cube_half_size + self.bin_thickness)
+        on_bin_z = cube_pos[..., 2] <= 1.01 * (
+            bin_pos[..., 2] + self.cube_half_size + self.bin_thickness
+        )
         success = (horizontal_dist < self.bin_half_size) & on_bin_z
         return {"success": success}
 

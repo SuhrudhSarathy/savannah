@@ -1,16 +1,18 @@
+from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from savannah.models.policy import Policy
-from savannah.models.vision_encoder import VisionEncoder
-from savannah.nn.positional_embeddings import get_sinusoidal_position_embedding
+from savannah.models.encoders import VisionEncoder, LanguageEncoder, StateEncoder
 from savannah.nn.self_attention import SelfAttention
 from savannah.nn.time_embedding import TimeEmbedding
 from savannah.objectives import PolicyObjective
 from savannah.utils.log import logger
 from savannah.utils.observation import ObservationKey
 from savannah.utils.policy import PolicyOutput
+from savannah.nn.positional_embeddings import get_sinusoidal_position_embedding
+import warnings
 
 
 class EncoderBlock(nn.Module):
@@ -129,7 +131,7 @@ class DecoderBlock(nn.Module):
         return x
 
 
-class DiTBlockPolicy(Policy):
+class DiTAdaLNPolicy(Policy):
     def __init__(
         self,
         embed_dim: int,
@@ -145,6 +147,7 @@ class DiTBlockPolicy(Policy):
         action_horizon: int,
         num_cameras: int,
         vision_encoder: VisionEncoder,
+        language_encoder: LanguageEncoder | None,
         objective: PolicyObjective,
     ):
         super().__init__()
@@ -185,11 +188,9 @@ class DiTBlockPolicy(Policy):
         self.time_embedding = TimeEmbedding(embed_dim)
         self.camera_embedding = nn.Embedding(num_cameras, embed_dim)
 
-        self.state_embedding = nn.Sequential(
-            nn.Linear(self._state_dim, self.embed_dim),
-            nn.GELU(),
-            nn.Linear(self.embed_dim, self.embed_dim),
-        )
+        self.state_encoder = StateEncoder(self._state_dim, self.embed_dim)
+        if language_encoder is not None:
+            self.language_encoder = language_encoder
 
         sinusoidal_position_embeddings = get_sinusoidal_position_embedding(
             self._action_horizon, self.embed_dim
@@ -223,6 +224,7 @@ class DiTBlockPolicy(Policy):
         x_img = obs[ObservationKey.images]
         x_state = obs[ObservationKey.state]
         x_time = obs[ObservationKey.time]
+        x_language = obs.get(ObservationKey.language, None)
 
         for cam_idx, img in enumerate(x_img):
             self._debug_stat(f"x_img[{cam_idx}] (raw)", img)
@@ -240,17 +242,21 @@ class DiTBlockPolicy(Policy):
         self._debug_stat("x_cam_tokens", x_cam_tokens)
 
         # (B, N, state_dim) -> (B, N, embedding_dim)
-        x_state = self.state_embedding(x_state)
+        x_state = self.state_encoder(x_state)
         self._debug_stat("x_state (embedded)", x_state)
 
-        # Add time embeddings for states also
-        x_state_time_embed = self.time_embedding(
-            torch.arange(x_state.shape[1], device=x_state.device).unsqueeze(1)
-        )
-        self._debug_stat("x_state_time_embed", x_state_time_embed)
-
-        x_state = x_state + x_state_time_embed
-        self._debug_stat("x_state (+ time embed)", x_state)
+        if x_language is not None:
+            if self.language_encoder is None:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("once")
+                    warnings.warn(
+                        "Language instruction is provided but LanguageEncoder is not specified. Not using language instruction",
+                        RuntimeWarning,
+                    )
+            else:
+                # (B, xx, embed_dim)
+                x_language = self.language_encoder(x_language)
+                self._debug_stat("x_lang", x_language)
 
         # (B,) -> (B, 1) optionally
         if len(x_time.shape) == 1:
@@ -268,7 +274,11 @@ class DiTBlockPolicy(Policy):
         x_noisy_actions = x_noisy_actions + self.action_time_embedding
         self._debug_stat("x_noisy_actions (+ pos embed)", x_noisy_actions)
 
-        x_cond = torch.cat([x_cam_tokens, x_state], dim=1)
+        if x_language is None:
+            x_cond = torch.cat([x_cam_tokens, x_state], dim=1)
+        else:
+            x_cond = torch.cat([x_language, x_cam_tokens, x_state], dim=1)
+
         self._debug_stat("x_cond", x_cond)
 
         encoder_layer_outputs = []

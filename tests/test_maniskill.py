@@ -20,7 +20,9 @@ if __name__ == "__main__":
         pick_color = choice[torch.randint(0, 2, (1,))]
         place_color = choice[torch.randint(0, 2, (1,))]
 
-        obs, info = env.reset(options={"pick_color": pick_color, "place_color": place_color})
+        obs, info = env.reset(
+            options={"pick_color": pick_color, "place_color": place_color}
+        )
         raw_env = env.unwrapped
         policy = VectorizedScriptedPolicy(
             num_envs=num_environments,

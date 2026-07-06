@@ -31,10 +31,14 @@ class ManiSkillColorMatchingTask(BaseRobotTask):
         )
 
     def _normalize_action(self, action: torch.Tensor) -> torch.Tensor:
-        return (action - self._action_low) / (self._action_high - self._action_low) * 2 - 1
+        return (action - self._action_low) / (
+            self._action_high - self._action_low
+        ) * 2 - 1
 
     def _unnormalize_action(self, action: torch.Tensor) -> torch.Tensor:
-        return (action + 1) / 2 * (self._action_high - self._action_low) + self._action_low
+        return (action + 1) / 2 * (
+            self._action_high - self._action_low
+        ) + self._action_low
 
     def _extract_obs(self, obs: dict) -> tuple[np.ndarray, dict[str, np.ndarray]]:
         tcp_pose = obs["extra"]["tcp_pose"]

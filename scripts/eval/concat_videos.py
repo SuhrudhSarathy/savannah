@@ -76,7 +76,9 @@ def make_text_frame(
                 current = candidate
         lines.append(current)
 
-    line_sizes = [cv2.getTextSize(line, font, font_scale, thickness)[0] for line in lines]
+    line_sizes = [
+        cv2.getTextSize(line, font, font_scale, thickness)[0] for line in lines
+    ]
     line_height = max(s[1] for s in line_sizes) + 10
     total_height = line_height * len(lines)
     y_start = (h - total_height) // 2 + line_sizes[0][1]
@@ -84,7 +86,9 @@ def make_text_frame(
     for i, (line, (tw, th)) in enumerate(zip(lines, line_sizes)):
         x = (w - tw) // 2
         y = y_start + i * line_height
-        cv2.putText(frame, line, (x, y), font, font_scale, fg_color, thickness, cv2.LINE_AA)
+        cv2.putText(
+            frame, line, (x, y), font, font_scale, fg_color, thickness, cv2.LINE_AA
+        )
 
     return [frame.copy()] * int(duration_s * fps)
 
@@ -105,13 +109,28 @@ def make_fade(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Concatenate eval videos with transitions")
-    parser.add_argument("--folder", required=True, help="Folder containing episode mp4 files")
-    parser.add_argument("--output", default="combined_eval.mp4", help="Output file path")
+    parser = argparse.ArgumentParser(
+        description="Concatenate eval videos with transitions"
+    )
+    parser.add_argument(
+        "--folder", required=True, help="Folder containing episode mp4 files"
+    )
+    parser.add_argument(
+        "--output", default="combined_eval.mp4", help="Output file path"
+    )
     parser.add_argument("--title", default=None, help="Title text shown at the start")
-    parser.add_argument("--fps", type=int, default=None, help="Output FPS (default: same as source)")
-    parser.add_argument("--fade-duration", type=float, default=0.5, help="Fade duration in seconds")
-    parser.add_argument("--title-duration", type=float, default=2.0, help="Title/episode card duration in seconds")
+    parser.add_argument(
+        "--fps", type=int, default=None, help="Output FPS (default: same as source)"
+    )
+    parser.add_argument(
+        "--fade-duration", type=float, default=0.5, help="Fade duration in seconds"
+    )
+    parser.add_argument(
+        "--title-duration",
+        type=float,
+        default=2.0,
+        help="Title/episode card duration in seconds",
+    )
     args = parser.parse_args()
 
     folder = Path(args.folder)
