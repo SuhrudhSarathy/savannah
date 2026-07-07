@@ -1,11 +1,11 @@
 defaults:
-  - model: dit_block
-  - task: metaworld_button_press
+  - model: dit_adaln
+  - task: maniskill_color_matching
   - _self_
 
 overfit:
   batch_size: 1
-  image_size: 96
+  image_size: ${task.config.image_size}
   steps: 2000
   lr: 1.0e-4
   log_every: 50
