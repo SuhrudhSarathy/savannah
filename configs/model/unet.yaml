@@ -6,7 +6,7 @@ num_obs: ${task.config.obs_horizon}
 state_dim: 4
 action_dim: 4
 action_horizon: 8
-num_cameras: 3
+num_cameras: ${len:${task.config.cameras}}
 objective:
   _target_: savannah.objectives.DDIMObjective
   num_train_timesteps: 100
@@ -15,7 +15,7 @@ objective:
   beta_end: 0.02
   clip_sample: True
 vision_encoder:
-  _target_: savannah.models.vision_encoder.VisionEncoder
+  _target_: savannah.models.encoders.vision_encoder.VisionEncoder
   embed_dim: ${model.embed_dim}
   backbone:
     _target_: savannah.models.backbones.resnet_backbone.ResNetBackbone

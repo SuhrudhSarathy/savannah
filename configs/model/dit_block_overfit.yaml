@@ -1,4 +1,4 @@
-_target_: savannah.models.dit_block_policy.DiTBlockPolicy
+_target_: savannah.models.dit_adaln_policy.DiTAdaLNPolicy
 embed_dim: 128
 num_blocks: 4
 encoder_num_attn_heads: 4
@@ -10,7 +10,7 @@ decoder_dropout: 0.1
 state_dim: 2
 action_dim: 2
 action_horizon: 8
-num_cameras: 1
+num_cameras: ${len:${task.config.cameras}}
 objective:
   _target_: savannah.objectives.DDIMObjective
   num_train_timesteps: 100
@@ -19,8 +19,9 @@ objective:
   beta_end: 0.02
   clip_sample: True
 vision_encoder:
-  _target_: savannah.models.vision_encoder.VisionEncoder
+  _target_: savannah.models.encoders.vision_encoder.VisionEncoder
   embed_dim: ${model.embed_dim}
   backbone:
     _target_: savannah.models.backbones.resnet_backbone.ResNetBackbone
     out_channels: 96
+language_encoder: null

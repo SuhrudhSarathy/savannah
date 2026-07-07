@@ -3,8 +3,6 @@ import math
 import os
 import signal
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Optional
 
 import torch
 from hydra.core.config_store import ConfigStore
@@ -18,7 +16,6 @@ from savannah.trainer.ema import EMA
 from savannah.trainer.scheduler import get_custom_scheduler
 from savannah.utils.device import get_device
 from savannah.utils.eval_and_log import evaluate_and_log
-from savannah.utils.gcs import upload_file_to_gcs
 from savannah.utils.log import logger
 from savannah.utils.logger import ExperimentLogger
 from savannah.utils.observation import ObservationKey
@@ -39,15 +36,8 @@ class TrainConfig:
     artifact_name: str = "model"
 
 
-@dataclass
-class GCPConfig:
-    bucket: Optional[str] = None
-    enable_model_checkpoint: bool = False
-
-
 cs = ConfigStore.instance()
 cs.store(name="train_config", node=TrainConfig)
-cs.store(name="gcp_config", node=GCPConfig)
 
 
 class PolicyTrainer:
@@ -58,13 +48,11 @@ class PolicyTrainer:
         logger: ExperimentLogger,
         config: TrainConfig,
         device: torch.device,
-        gcp_config: GCPConfig = GCPConfig(),
     ):
         self.policy = policy.to(device)
         self.task = task
         self.logger = logger
         self.config = config
-        self.gcp_config = gcp_config
         self.device = device
 
         # Setup Optimizer
@@ -86,9 +74,6 @@ class PolicyTrainer:
         self.global_step = 0
         self.best_success_rate = -1.0
         self.best_val_loss = 10000.0
-
-        # Captured once so all checkpoints uploaded for this run share a folder.
-        self.run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         os.makedirs(self.config.checkpoint_dir, exist_ok=True)
 
@@ -243,29 +228,6 @@ class PolicyTrainer:
         else:
             logger.debug(
                 "wandb.enable_model_checkpoint is false — skipping W&B artifact upload."
-            )
-
-        if self.gcp_config.enable_model_checkpoint and self.gcp_config.bucket:
-            gcs_prefix = f"{self.config.artifact_name}_{self.run_timestamp}"
-            for ckpt_name in checkpoint_aliases:
-                local_path = os.path.join(self.config.checkpoint_dir, ckpt_name)
-                if os.path.exists(local_path):
-                    try:
-                        uri = upload_file_to_gcs(
-                            local_path,
-                            self.gcp_config.bucket,
-                            f"{gcs_prefix}/{ckpt_name}",
-                        )
-                        logger.success("Uploaded {} to {}", local_path, uri)
-                    except Exception as e:
-                        logger.error("Failed to upload {} to GCS: {}", local_path, e)
-        elif self.gcp_config.enable_model_checkpoint:
-            logger.debug(
-                "gcp.enable_model_checkpoint is true but gcp.bucket is not set — skipping GCS upload."
-            )
-        else:
-            logger.debug(
-                "gcp.enable_model_checkpoint is false — skipping checkpoint upload to GCS."
             )
 
         self.logger.finish()

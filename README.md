@@ -73,15 +73,8 @@ uv run python scripts/train.py wandb.enable_logging=false
 Checkpoints are written to `trainer.checkpoint_dir` (default `checkpoints/`).
 
 `best_model`, `best_model_success`, and `latest` checkpoints can additionally be
-uploaded to:
-
-- **W&B artifacts** — controlled by `wandb.enable_model_checkpoint` (default `true`,
-  requires `wandb.enable_logging=true`).
-- **Google Cloud Storage** — set `gcp.enable_model_checkpoint=true` and
-  `gcp.bucket=<bucket-name>` (requires GCS credentials via Application Default
-  Credentials — run `gcloud auth application-default login` or set
-  `GOOGLE_APPLICATION_CREDENTIALS`). Checkpoints land at
-  `gs://<bucket>/<trainer.artifact_name>_<run-timestamp>/`.
+uploaded as **W&B artifacts** — controlled by `wandb.enable_model_checkpoint`
+(default `true`, requires `wandb.enable_logging=true`).
 
 ### Running multiple experiments
 
