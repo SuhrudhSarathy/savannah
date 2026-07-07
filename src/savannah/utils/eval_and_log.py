@@ -9,6 +9,21 @@ from savannah.utils.action_buffer import ActionBuffer
 from savannah.utils.logger import ExperimentLogger
 
 
+def _to_hwc_frame(frame) -> np.ndarray:
+    """Normalizes env.render() output to a plain (H, W, C) numpy array.
+
+    Most gym envs (gym_pusht, MetaWorld) already return this. ManiSkill's
+    vectorized envs instead return a batched torch.Tensor of shape
+    (num_envs, H, W, C) — squeeze the env dim and move it off-device.
+    """
+    if isinstance(frame, torch.Tensor):
+        frame = frame.detach().cpu().numpy()
+    frame = np.asarray(frame)
+    if frame.ndim == 4:
+        frame = frame[0]
+    return frame
+
+
 def evaluate_and_log(
     policy: Policy,
     task: BaseRobotTask,
@@ -45,7 +60,7 @@ def evaluate_and_log(
 
         while not done:
             # 1. Render and collect frame for logging (W&B expects C, H, W)
-            frame = env.render()
+            frame = _to_hwc_frame(env.render())
             frames.append(frame.transpose(2, 0, 1))
 
             # 2. Only query the heavy neural network if we are out of actions!

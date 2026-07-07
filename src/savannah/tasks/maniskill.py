@@ -70,6 +70,11 @@ class ManiSkillColorMatchingTask(BaseRobotTask):
             rgb = obs["sensor_data"][cam]["rgb"]
             if isinstance(rgb, torch.Tensor):
                 rgb = rgb.cpu().numpy()
+            if rgb.ndim == 4:
+                # ManiSkill's vectorized env keeps a leading num_envs dim even
+                # for num_envs=1 — squeeze it so stacking across timesteps in
+                # _obs_to_tensors produces (T, H, W, C), not (T, 1, H, W, C).
+                rgb = rgb[0]
             images[cam] = rgb[..., :3].astype(np.uint8)
 
         return state, images
