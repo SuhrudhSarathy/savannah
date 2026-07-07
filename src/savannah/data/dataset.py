@@ -36,6 +36,10 @@ class DataSetConfig:
     # so each sample is only decoded once across all epochs.
     cache_in_memory: bool = False
 
+    # Expose LeRobot's per-frame natural-language task description under
+    # ObservationKey.language, for language-conditioned policies.
+    use_language: bool = False
+
 
 cs = ConfigStore.instance()
 cs.store(name="dataset_config", node=DataSetConfig)
@@ -73,6 +77,26 @@ class _CachedDataset(Dataset):
         for key in self.image_keys:
             if key in item:
                 item[key] = item[key].to(torch.float32) / 255.0
+        return item
+
+
+class _LanguageKeyDataset(Dataset):
+    """Exposes LeRobot's per-frame `task` string under ObservationKey.language.
+
+    LeRobotDataset always populates `item["task"]` (the natural-language task
+    description for the frame's episode) regardless of delta_timestamps, so
+    this is just a rename — no extra decoding cost.
+    """
+
+    def __init__(self, dataset: Dataset):
+        self.dataset = dataset
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        item = dict(self.dataset[idx])
+        item[ObservationKey.language] = item["task"]
         return item
 
 
@@ -135,6 +159,10 @@ class LerobotDatasetWrapper:
 
         train_dataset = Subset(full_dataset, train_indices)
         val_dataset = Subset(full_dataset, val_indices)
+
+        if config.use_language:
+            train_dataset = _LanguageKeyDataset(train_dataset)
+            val_dataset = _LanguageKeyDataset(val_dataset)
 
         if config.cache_in_memory:
             image_keys = {
@@ -240,3 +268,37 @@ if __name__ == "__main__":
                 print(f"  {key:<25}: {val.shape}")
     except Exception as e:
         print(f"❌ Failed on obs_horizon=3. Error: {e}")
+
+    # ==========================================
+    # TEST 3: Language-Conditioned Batch
+    # ==========================================
+    print("\n" + "=" * 50)
+    print("TESTING: use_language = True")
+    print("=" * 50)
+
+    config_language = DataSetConfig(
+        repo_id="lerobot/pusht",
+        fps=10,
+        cameras=["image"],
+        obs_horizon=1,
+        action_horizon=4,
+        batch_size=2,
+        num_workers=0,
+        train_fraction=0.9,
+        use_language=True,
+    )
+
+    try:
+        train_loader_language, _ = LerobotDatasetWrapper.create_loaders(
+            config_language, device
+        )
+        batch_language = next(iter(train_loader_language))
+
+        print("\nBatch Keys (use_language=True):")
+        for key, val in batch_language.items():
+            if isinstance(val, torch.Tensor):
+                print(f"  {key:<25}: {val.shape}")
+            else:
+                print(f"  {key:<25}: {val}")
+    except Exception as e:
+        print(f"❌ Failed on use_language=True. Error: {e}")

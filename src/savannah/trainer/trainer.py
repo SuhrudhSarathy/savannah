@@ -103,6 +103,7 @@ class PolicyTrainer:
                 "Interrupted at step {} — saving latest.ckpt…", self.global_step
             )
             self.save_checkpoint("latest", self.best_val_loss)
+            self.logger.finish()
             raise SystemExit(0)
 
         signal.signal(signal.SIGINT, _sigint_handler)

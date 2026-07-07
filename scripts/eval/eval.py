@@ -28,6 +28,7 @@ from savannah.utils.logger import ExperimentLogger
 @hydra.main(version_base=None, config_path="../../configs", config_name="eval")
 def main(cfg: DictConfig) -> None:
     setup_logging(log_dir="logs", level=cfg.log_level)
+    logger.info("Config:\n{}", OmegaConf.to_yaml(cfg, resolve=True))
     exp_logger = ExperimentLogger(
         project_name=cfg.wandb.project,
         config=OmegaConf.to_container(cfg, resolve=True),

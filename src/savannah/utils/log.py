@@ -67,6 +67,12 @@ def setup_logging(
 
     logging.basicConfig(handlers=[_InterceptHandler()], level=0, force=True)
     for name in list(logging.root.manager.loggerDict):
+        # wandb (and sentry_sdk, which it uses for error reporting) manage
+        # their own log files under wandb/run-*/logs/ — leave them alone so
+        # their internal chatter (and shutdown noise on interrupt) doesn't
+        # get duplicated into our own console/log sinks.
+        if name == "wandb" or name.startswith(("wandb.", "sentry_sdk")):
+            continue
         log = logging.getLogger(name)
         log.handlers = [_InterceptHandler()]
         log.propagate = False

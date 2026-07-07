@@ -11,7 +11,7 @@ except ImportError:
 
 import hydra
 import torch
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from savannah.factory import build_policy
 from savannah.models.policy import Policy
@@ -62,6 +62,7 @@ def main(cfg: DictConfig) -> None:
     time on the data pipeline or a full training run.
     """
     setup_logging(log_dir="logs", level=cfg.log_level)
+    print(OmegaConf.to_yaml(cfg, resolve=True))
     device = get_device()
     print("Using device:", device)
 

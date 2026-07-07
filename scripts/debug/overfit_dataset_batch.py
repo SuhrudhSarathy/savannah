@@ -10,7 +10,7 @@ except ImportError:
     sys.modules["imp"] = imp
 
 import hydra
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from savannah.factory import build_policy, build_task
 from savannah.trainer.overfit import overfit_on_batch, validate_action_reconstruction
@@ -29,6 +29,7 @@ def main(cfg: DictConfig) -> None:
     `overfit_random.py` passes, and the last check before a full training run.
     """
     log_path = setup_logging(log_dir="logs", level=cfg.log_level)
+    print(OmegaConf.to_yaml(cfg, resolve=True))
     device = get_device()
     print("Using device:", device)
 

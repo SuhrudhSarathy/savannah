@@ -25,6 +25,7 @@ from savannah.utils.logger import ExperimentLogger
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def main(cfg: DictConfig) -> None:
     setup_logging(log_dir="logs", level=cfg.log_level)
+    logger.info("Config:\n{}", OmegaConf.to_yaml(cfg, resolve=True))
 
     fraction = float(os.environ.get("CUDA_MEMORY_FRACTION", "1.0"))
     if fraction < 1.0 and torch.cuda.is_available():
