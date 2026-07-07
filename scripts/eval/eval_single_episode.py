@@ -79,6 +79,12 @@ def run_dataset_episode_eval(cfg: DictConfig) -> None:
         batch = {
             k: v.unsqueeze(0) for k, v in sample.items() if isinstance(v, torch.Tensor)
         }
+        if dataset_config.use_language:
+            # LeRobotDataset always populates "task" regardless of
+            # delta_timestamps; mirror _LanguageKeyDataset's rename here since
+            # this script builds the dataset directly instead of going
+            # through LerobotDatasetWrapper.
+            batch[ObservationKey.language] = [sample["task"]]
 
         formatted = task.format_batch(batch)
 

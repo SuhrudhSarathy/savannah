@@ -1,14 +1,14 @@
 defaults:
-  - model: dit_block
-  - task: metaworld_assembly
+  - model: dit_adaln
+  - task: maniskill_color_matching
   - _self_
 
 checkpoint_path: null # local checkpoint: pass via CLI: checkpoint_path=path/to/model.ckpt
 wandb_artifact: null # OR pull from W&B: wandb_artifact=savannah/flow_matching_pusht:best
 use_ema: true # load ema_state_dict instead of model_state_dict
-num_episodes: 100
+num_episodes: 1
 execute_steps: 32 # how many actions to execute per chunk (receding horizon)
-video_folder: ./eval_videos_ddim_assembly
+video_folder: /Users/suhrudh/savannah/eval_videos
 episode_index: 0 # which dataset episode to inspect (used by eval_single_episode.py)
 pick_color: null # ManiSkill ColorMatching only: red/green/blue. If null, chosen randomly each episode.
 place_color: null # ManiSkill ColorMatching only: red/green/blue. If null, chosen randomly each episode.

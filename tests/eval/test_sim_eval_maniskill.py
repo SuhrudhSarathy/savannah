@@ -18,7 +18,7 @@ from policy_helpers import build_tiny_policy
 setup_logging(level="WARNING")
 
 ACTION_HORIZON = 4
-STATE_DIM = 3
+STATE_DIM = 8
 ACTION_DIM = 7
 NUM_CAMERAS = 1
 

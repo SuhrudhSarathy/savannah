@@ -31,7 +31,7 @@ class ManiSkillColorMatchingTask(BaseRobotTask):
         return gym.make(
             "ColorMatching-v1",
             num_envs=1,
-            obs_mode="rgbd",
+            obs_mode="rgb",
             control_mode="pd_ee_delta_pose",
             render_mode=render_mode,
         )
@@ -60,10 +60,20 @@ class ManiSkillColorMatchingTask(BaseRobotTask):
         return env.reset(options={"pick_color": pick_color, "place_color": place_color})
 
     def _extract_obs(self, obs: dict) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+        # Must match observation.state in collect_maniskill_data.py:
+        # tcp_pose (ee_x, ee_y, ee_z, ee_qw, ee_qx, ee_qy, ee_qz) + gripper width.
         tcp_pose = obs["extra"]["tcp_pose"]
         if isinstance(tcp_pose, torch.Tensor):
-            tcp_pose = tcp_pose.cpu().numpy().flatten()
-        state = tcp_pose[:3]
+            tcp_pose = tcp_pose.cpu().numpy()
+        tcp_pose = tcp_pose.reshape(-1)
+
+        qpos = obs["agent"]["qpos"]
+        if isinstance(qpos, torch.Tensor):
+            qpos = qpos.cpu().numpy()
+        qpos = qpos.reshape(-1)
+        gripper_width = qpos[-2:-1] + qpos[-1:]
+
+        state = np.concatenate([tcp_pose, gripper_width]).astype(np.float32)
 
         images = {}
         for cam in self.config.cameras:
@@ -131,6 +141,11 @@ class ManiSkillColorMatchingTask(BaseRobotTask):
             pad = [obs_list[0]] * (obs_horizon - len(obs_list))
             obs_list = pad + obs_list
         return self._obs_to_tensors(obs_list)
+
+    def postprocess_chunk(self, actions: torch.Tensor) -> None:
+        # ActionChunkVisualizer expects 2D pixel coords (pusht-only); ManiSkill
+        # actions are 7-dim EE-pose deltas, so there's nothing to draw.
+        return None
 
     def postprocess_action(self, action_tensor: torch.Tensor) -> np.ndarray:
         action = self._unnormalize_action(action_tensor.to(self.device))

@@ -2,6 +2,7 @@ import gymnasium as gym
 from gymnasium.wrappers import RecordVideo
 import cv2
 import numpy as np
+import torch
 
 from .base import BaseRobotTask
 from savannah.utils.log import logger
@@ -18,7 +19,15 @@ class ActionChunkVisualizer(gym.Wrapper):
 
     def render(self):
         frame = self.env.render()
-        if frame is None or self.action_chunk is None:
+        if frame is None:
+            return frame
+
+        if isinstance(frame, torch.Tensor):
+            # ManiSkill's vectorized env returns a (num_envs, H, W, C) tensor
+            # even for num_envs=1 — RecordVideo needs a plain (H, W, C) array.
+            frame = frame[0].detach().cpu().numpy().astype(np.uint8)
+
+        if self.action_chunk is None:
             return frame
 
         frame = frame.copy()
