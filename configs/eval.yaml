@@ -10,6 +10,8 @@ num_episodes: 100
 execute_steps: 32 # how many actions to execute per chunk (receding horizon)
 video_folder: ./eval_videos_ddim_assembly
 episode_index: 0 # which dataset episode to inspect (used by eval_single_episode.py)
+pick_color: null # ManiSkill ColorMatching only: red/green/blue. If null, chosen randomly each episode.
+place_color: null # ManiSkill ColorMatching only: red/green/blue. If null, chosen randomly each episode.
 log_level: INFO # DEBUG | INFO | WARNING | ERROR
 
 wandb:

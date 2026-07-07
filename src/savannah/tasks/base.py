@@ -44,6 +44,16 @@ class BaseRobotTask(ABC):
             self._env = self._make_env(render_mode)
         return self._env
 
+    def reset_env(self, env: gym.Env, **kwargs) -> tuple:
+        """Resets `env` for a new episode.
+
+        Base implementation ignores kwargs and does a plain reset. Override
+        for tasks that need extra reset options (e.g. object colors) and want
+        to cache per-episode context (e.g. a language instruction) for
+        preprocess_observation/preprocess_observation_history to pick up.
+        """
+        return env.reset()
+
     @abstractmethod
     def _make_env(self, render_mode: str) -> gym.Env:
         """Instantiates the specific Gym environment."""

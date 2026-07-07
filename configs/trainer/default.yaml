@@ -8,4 +8,4 @@ eval_episodes: 1
 eval_execute_steps: 32
 ema_decay: 0.9999
 checkpoint_dir: checkpoints
-artifact_name: dit_block_assembly
+artifact_name: dit_adaln_maniskill

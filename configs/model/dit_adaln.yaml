@@ -7,9 +7,9 @@ encoder_dropout: 0.1
 decoder_num_attn_heads: 4
 decoder_feedforward_dim: 512
 decoder_dropout: 0.1
-state_dim: 2
-action_dim: 2
-action_horizon: 8
+state_dim: 8
+action_dim: 7
+action_horizon: 32
 num_cameras: ${len:${task.config.cameras}}
 objective:
   _target_: savannah.objectives.DDIMObjective
@@ -24,4 +24,8 @@ vision_encoder:
   backbone:
     _target_: savannah.models.backbones.resnet_backbone.ResNetBackbone
     out_channels: 96
-language_encoder: null
+language_encoder:
+  _target_: savannah.models.encoders.language_encoder.LanguageEncoder
+  embed_dim: ${model.embed_dim}
+  base_model: openai/clip-vit-base-patch32
+  use_eos_only: True

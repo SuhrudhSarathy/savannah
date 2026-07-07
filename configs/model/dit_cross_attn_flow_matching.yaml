@@ -1,12 +1,8 @@
-_target_: savannah.models.dit_adaln_policy.DiTAdaLNPolicy
+_target_: savannah.models.dit_cross_attn.DiTCrossAttnPolicy
 embed_dim: 128
+num_attn_heads: 4
+feedforward_dim: 512
 num_blocks: 4
-encoder_num_attn_heads: 4
-encoder_feedforward_dim: 512
-encoder_dropout: 0.1
-decoder_num_attn_heads: 4
-decoder_feedforward_dim: 512
-decoder_dropout: 0.1
 state_dim: 4
 action_dim: 4
 action_horizon: 32

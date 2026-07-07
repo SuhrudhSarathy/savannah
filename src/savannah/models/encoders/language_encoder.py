@@ -39,7 +39,7 @@ class LanguageEncoder(nn.Module):
 
     def forward(self, text_inputs: list[str]):
         # Tokenize inputs
-        inputs = self.tokenizer(text_inputs, padding=True, return_tensors="pt")
+        inputs = self.tokeniser(text_inputs, padding=True, return_tensors="pt")
         inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
 
         self.model.eval()

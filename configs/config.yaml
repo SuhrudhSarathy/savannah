@@ -1,13 +1,13 @@
 defaults:
-  - model: dit_block
-  - task: metaworld_assembly
+  - model: dit_adaln
+  - task: maniskill_color_matching
   - trainer: default
   - _self_
 
 wandb:
   project: savannah
-  run_name: null
-  enable_logging: true
+  run_name: maniskill_color_matching
+  enable_logging: false
   enable_model_checkpoint: false # upload best/best_success/latest checkpoints as W&B artifacts
 
-log_level: INFO # DEBUG | INFO | WARNING | ERROR
+log_level: DEBUG # DEBUG | INFO | WARNING | ERROR

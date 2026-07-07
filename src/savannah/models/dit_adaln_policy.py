@@ -191,6 +191,7 @@ class DiTAdaLNPolicy(Policy):
         self.state_encoder = StateEncoder(self._state_dim, self.embed_dim)
         if language_encoder is not None:
             self.language_encoder = language_encoder
+            logger.debug("Initialised Language Encoder into the model")
 
         sinusoidal_position_embeddings = get_sinusoidal_position_embedding(
             self._action_horizon, self.embed_dim
@@ -230,6 +231,8 @@ class DiTAdaLNPolicy(Policy):
             self._debug_stat(f"x_img[{cam_idx}] (raw)", img)
         self._debug_stat("x_state (raw)", x_state)
         self._debug_stat("x_time (raw)", x_time)
+        if x_language is not None:
+            logger.debug("x_language (raw) {}", x_language)
 
         # Get noisy actions from kwargs
         noisy_actions = kwargs.get("noisy_actions", None)

@@ -54,7 +54,9 @@ def main(cfg: DictConfig) -> None:
 
     successes = 0
     for ep in range(cfg.num_episodes):
-        raw_obs, _ = env.reset()
+        raw_obs, _ = task.reset_env(
+            env, pick_color=cfg.pick_color, place_color=cfg.place_color
+        )
         obs_history = deque([raw_obs] * obs_horizon, maxlen=obs_horizon)
         action_buffer = ActionBuffer(execute_steps=cfg.execute_steps)
         done = False

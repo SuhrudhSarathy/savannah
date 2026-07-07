@@ -1,3 +1,4 @@
+import random
 from collections import deque
 
 import gymnasium as gym
@@ -12,12 +13,17 @@ IMG_SIZE = (128, 128)
 _ACTION_LOW = np.full(7, -1.0, dtype=np.float32)
 _ACTION_HIGH = np.full(7, 1.0, dtype=np.float32)
 
+# Must match COLORS/task_str in scripts/data/collect_maniskill_data.py so
+# eval-time instructions match the language the policy was trained on.
+COLORS = ["red", "green", "blue"]
+
 
 class ManiSkillColorMatchingTask(BaseRobotTask):
     def __init__(self, config, device: torch.device):
         super().__init__(config, device)
         self._action_low = torch.tensor(_ACTION_LOW, device=device)
         self._action_high = torch.tensor(_ACTION_HIGH, device=device)
+        self._task_str: str | None = None
 
     def _make_env(self, render_mode: str) -> gym.Env:
         import savannah.envs  # noqa: F401 — triggers @register_env
@@ -39,6 +45,19 @@ class ManiSkillColorMatchingTask(BaseRobotTask):
         return (action + 1) / 2 * (
             self._action_high - self._action_low
         ) + self._action_low
+
+    def reset_env(
+        self,
+        env: gym.Env,
+        pick_color: str | None = None,
+        place_color: str | None = None,
+    ):
+        pick_color = pick_color or random.choice(COLORS)
+        place_color = place_color or random.choice(COLORS)
+        self._task_str = (
+            f"Pick the {pick_color} block and place it in the {place_color} bin"
+        )
+        return env.reset(options={"pick_color": pick_color, "place_color": place_color})
 
     def _extract_obs(self, obs: dict) -> tuple[np.ndarray, dict[str, np.ndarray]]:
         tcp_pose = obs["extra"]["tcp_pose"]
@@ -74,7 +93,10 @@ class ManiSkillColorMatchingTask(BaseRobotTask):
             )
             img_list.append(img_tensor)
 
-        return {ObservationKey.images: img_list, ObservationKey.state: state_tensor}
+        result = {ObservationKey.images: img_list, ObservationKey.state: state_tensor}
+        if self.config.use_language and self._task_str is not None:
+            result[ObservationKey.language] = [self._task_str]
+        return result
 
     def format_batch(self, batch: dict) -> dict:
         state = batch["observation.state"].to(self.device)
@@ -91,6 +113,7 @@ class ManiSkillColorMatchingTask(BaseRobotTask):
             ObservationKey.images: images,
             ObservationKey.state: state,
             ObservationKey.gt_actions: self._normalize_action(actions),
+            ObservationKey.language: batch[ObservationKey.language],
         }
 
     def preprocess_observation(self, obs: dict) -> dict:
