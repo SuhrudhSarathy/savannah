@@ -185,7 +185,13 @@ class DiTAdaLNPolicy(Policy):
             ]
         )
 
-        self.time_embedding = TimeEmbedding(embed_dim)
+        self.time_embedding = nn.Sequential(
+            TimeEmbedding(embed_dim),
+            nn.Linear(embed_dim, 4 * embed_dim),
+            nn.GELU(),
+            nn.Linear(4 * embed_dim, embed_dim),
+        )
+
         self.camera_embedding = nn.Embedding(num_cameras, embed_dim)
 
         self.state_encoder = StateEncoder(self._state_dim, self.embed_dim)

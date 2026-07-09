@@ -1,6 +1,6 @@
 defaults:
   - model: dit_adaln
-  - task: maniskill_color_matching
+  - task: metaworld_assembly
   - _self_
 
 checkpoint_path: null # local checkpoint: pass via CLI: checkpoint_path=path/to/model.ckpt
