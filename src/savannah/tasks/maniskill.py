@@ -113,7 +113,7 @@ class ManiSkillColorMatchingTask(BaseRobotTask):
             result[ObservationKey.language] = [self._task_str]
         return result
 
-    def format_batch(self, batch: dict) -> dict:
+    def format_batch(self, batch: dict, step: int | None = None) -> dict:
         state = batch["observation.state"].to(self.device)
         actions = batch["action"].to(self.device)
 
@@ -123,6 +123,10 @@ class ManiSkillColorMatchingTask(BaseRobotTask):
             if img.ndim == 4:
                 img = img.unsqueeze(1)
             images.append(img)
+
+        if step is not None:
+            images = self._augmenter.augment_images(images, step)
+            state = self._augmenter.augment_state(state, step)
 
         return {
             ObservationKey.images: images,

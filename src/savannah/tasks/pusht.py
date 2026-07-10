@@ -14,7 +14,7 @@ class PushTTask(BaseRobotTask):
             "gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode=render_mode
         )
 
-    def format_batch(self, batch: dict) -> dict:
+    def format_batch(self, batch: dict, step: int | None = None) -> dict:
         images = batch["observation.image"].to(self.device)
         state = batch["observation.state"].to(self.device)
         actions = batch["action"].to(self.device)
@@ -22,9 +22,15 @@ class PushTTask(BaseRobotTask):
         if images.ndim == 4:
             images = images.unsqueeze(1)
 
+        images_list = [images]
+        state_norm = (state - 256.0) / 512.0
+        if step is not None:
+            images_list = self._augmenter.augment_images(images_list, step)
+            state_norm = self._augmenter.augment_state(state_norm, step)
+
         return {
-            ObservationKey.images: [images],
-            ObservationKey.state: (state - 256.0) / 512.0,
+            ObservationKey.images: images_list,
+            ObservationKey.state: state_norm,
             ObservationKey.gt_actions: (actions - 256.0) / 512.0,
         }
 

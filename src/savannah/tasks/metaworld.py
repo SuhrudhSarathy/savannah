@@ -126,7 +126,7 @@ class MetaworldTask(BaseRobotTask):
             self._action_high - self._action_low
         ) + self._action_low
 
-    def format_batch(self, batch: dict) -> dict:
+    def format_batch(self, batch: dict, step: int | None = None) -> dict:
         state = batch["observation.state"].to(self.device)[..., STATE_KEEP_INDICES]
         actions = batch["action"].to(self.device)
 
@@ -137,9 +137,14 @@ class MetaworldTask(BaseRobotTask):
                 img = img.unsqueeze(1)
             images.append(img)
 
+        state_norm = self._normalize_state(state)
+        if step is not None:
+            images = self._augmenter.augment_images(images, step)
+            state_norm = self._augmenter.augment_state(state_norm, step)
+
         return {
             ObservationKey.images: images,
-            ObservationKey.state: self._normalize_state(state),
+            ObservationKey.state: state_norm,
             ObservationKey.gt_actions: self._normalize_action(actions),
         }
 

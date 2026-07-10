@@ -121,8 +121,8 @@ class PolicyTrainer:
                 train_iter = iter(train_loader)
                 raw_batch = next(train_iter)
 
-            # 2. Format batch using the Task
-            batch = self.task.format_batch(raw_batch)
+            # 2. Format batch using the Task (augmentation decays with global_step)
+            batch = self.task.format_batch(raw_batch, step=self.global_step)
 
             # 3. Forward Pass & Loss (Policy handles all ODE matching internally!)
             loss = self.policy.compute_loss(batch)

@@ -1,11 +1,11 @@
 _target_: savannah.models.dit_adaln_policy.DiTAdaLNPolicy
-embed_dim: 128
+embed_dim: 64
 num_blocks: 4
 encoder_num_attn_heads: 4
-encoder_feedforward_dim: 512
+encoder_feedforward_dim: ${embed_dim * 4}
 encoder_dropout: 0.1
 decoder_num_attn_heads: 4
-decoder_feedforward_dim: 512
+decoder_feedforward_dim: ${embed_dim * 4}
 decoder_dropout: 0.1
 state_dim: 2
 action_dim: 2

@@ -2,9 +2,10 @@ from abc import ABC, abstractmethod
 import torch
 import numpy as np
 import gymnasium as gym
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from savannah.utils.observation import ObservationKey
+from savannah.data.augmentation import ObservationAugmenter
 from savannah.data.dataset import DataSetConfig, LerobotDatasetWrapper
 from collections import deque
 
@@ -13,6 +14,7 @@ class BaseRobotTask(ABC):
     def __init__(self, config: "DataSetConfig", device: torch.device):
         self.config = config
         self.device = device
+        self._augmenter = ObservationAugmenter(config.augmentation)
 
         # Will be populated lazily
         self._train_loader = None
@@ -32,10 +34,16 @@ class BaseRobotTask(ABC):
         return self._val_loader
 
     @abstractmethod
-    def format_batch(self, batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
+    def format_batch(
+        self, batch: Dict[str, Any], step: Optional[int] = None
+    ) -> Dict[str, torch.Tensor]:
         """
         Translates raw LeRobot string keys to your ObservationKey Enums,
         and applies normalization for training.
+
+        Pass `step` (the current training step) to enable augmentation —
+        it's used to compute the decay schedule in `self._augmenter`. Leave
+        it None for validation/eval batches, which should stay unaugmented.
         """
         ...
 

@@ -31,11 +31,14 @@ def evaluate_and_log(
     step: int,
     num_episodes: int = 3,
     execute_steps: int = 8,
-    obs_horizon: int = 3,
+    obs_horizon: int | None = None,
 ) -> tuple[float, float]:
     """
     Evaluates the policy using receding horizon control (action chunking).
     """
+    if obs_horizon is None:
+        obs_horizon = task.config.obs_horizon
+
     env = task.get_env(render_mode="rgb_array")
 
     # Put model in inference mode

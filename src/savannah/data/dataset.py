@@ -9,6 +9,7 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetad
 from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision.transforms import v2
 
+from savannah.data.augmentation import AugmentationConfig
 from savannah.utils import ObservationKey
 
 
@@ -39,6 +40,10 @@ class DataSetConfig:
     # Expose LeRobot's per-frame natural-language task description under
     # ObservationKey.language, for language-conditioned policies.
     use_language: bool = False
+
+    # Train-time image/state augmentation (crop, color jitter, speckle noise,
+    # state noise), disabled by default. See savannah.data.augmentation.
+    augmentation: AugmentationConfig = field(default_factory=AugmentationConfig)
 
 
 cs = ConfigStore.instance()
