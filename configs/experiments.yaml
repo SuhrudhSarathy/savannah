@@ -4,15 +4,23 @@
 vram_per_run_gb: 10
 
 experiments:
-  - name: dit_block_assembly
-    overrides:
-      - model=dit_block
-      - trainer.checkpoint_dir=checkpoints/dit_block_assembly
+  # - name: dit_adaln_pusht
+  #   overrides:
+  #     - model=dit_adaln
+  #     - trainer.checkpoint_dir=checkpoints/dit_adaln
+  # - name: dit_adaln_flow_matching_pusht
+  #   overrides:
+  #     - model=dit_adaln_flow_matching
+  #     - trainer.checkpoint_dir=checkpoints/dit_adaln_flow_matching
 
-  - name: dit_block_fm_assembly
+  - name: dit_cross_pusht
     overrides:
-      - model=dit_block_flow_matching
-      - trainer.checkpoint_dir=checkpoints/dit_fm_assembly
+      - model=dit_cross_attn
+      - trainer.checkpoint_dir=checkpoints/dit_cross_attn
+  - name: dit_cross_attn_flow_matching_pusht
+    overrides:
+      - model=dit_cross_attn_flow_matching
+      - trainer.checkpoint_dir=checkpoints/dit_cross_attn_flow_matching
 
   # - name: unet_pusht_ddim
   #   overrides:

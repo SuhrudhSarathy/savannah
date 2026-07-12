@@ -3,9 +3,9 @@ embed_dim: 128
 num_attn_heads: 4
 feedforward_dim: 512
 num_blocks: 4
-state_dim: 4
-action_dim: 4
-action_horizon: 32
+state_dim: 2
+action_dim: 2
+action_horizon: 12
 num_cameras: ${len:${task.config.cameras}}
 objective:
   _target_: savannah.objectives.FlowMatchingObjective

@@ -62,12 +62,8 @@ def main(cfg: DictConfig) -> None:
         done = False
 
         logger.info("── Episode {}/{} ──", ep + 1, cfg.num_episodes)
-        i = 0
-        while not done:
-            i += 1
-            if i > 100:
-                done = True
 
+        while not done:
             if action_buffer.is_empty():
                 obs_dict = task.preprocess_observation_history(obs_history)
                 with torch.no_grad():
@@ -87,12 +83,14 @@ def main(cfg: DictConfig) -> None:
             obs_history.append(raw_obs)
             done = terminated or truncated or task.is_success(info)
 
+            logger.info("Success={}, coverage={}, terminated={}, truncated={}", info["is_success"], info["coverage"], terminated, truncated)
+
         success = task.is_success(info)
         successes += int(success)
         if success:
-            logger.success("Episode {} SUCCESS")
+            logger.success("Episode {} SUCCESS. Metrics: {}", ep, task.get_metrics(info))
         else:
-            logger.warning("Episode {} FAIL")
+            logger.warning("Episode {} FAIL. Metrics: {}", ep, task.get_metrics(info))
 
     env.close()
     logger.info("Success rate: {}/{}", successes, cfg.num_episodes)

@@ -1,6 +1,6 @@
 defaults:
   - model: dit_adaln
-  - task: maniskill_color_matching
+  - task: pusht
   - _self_
 
 overfit:
