@@ -1,5 +1,6 @@
 from collections import deque
 
+import gym_pusht  # noqa: F401 -- import registers "gym_pusht/PushT-v0" with gymnasium
 import gymnasium as gym
 import numpy as np
 import torch
