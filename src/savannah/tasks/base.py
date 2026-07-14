@@ -94,3 +94,6 @@ class BaseRobotTask(ABC):
 
     def is_success(self, info: Dict[str, Any]) -> bool:
         return info.get("score", 0) > 0.95
+
+    def get_metrics(self, info: Dict[str, Any]) -> str:
+        return ""

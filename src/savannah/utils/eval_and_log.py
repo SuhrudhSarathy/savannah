@@ -40,6 +40,8 @@ def evaluate_and_log(
         obs_horizon = task.config.obs_horizon
 
     env = task.get_env(render_mode="rgb_array")
+    if obs_horizon is None:
+        obs_horizon = task.config.obs_horizon
 
     # Put model in inference mode
     policy.eval()
@@ -86,10 +88,14 @@ def evaluate_and_log(
 
             # 5. Step the environment
             raw_obs, reward, terminated, truncated, info = env.step(action_to_apply)
+
+
             obs_history.append(raw_obs)
+
 
             cum_reward += reward
             done = terminated or truncated
+
 
         # Tally metrics for this episode
         rewards.append(cum_reward)

@@ -112,6 +112,15 @@ class PushTTask(BaseRobotTask):
         # This maps a [-0.5, 0.5] range to [0, 512] pixels
         return (action_np * 512.0) + 256.0
 
+    def is_success(self, info: dict) -> bool:
+        coverage = info.get("coverage", None)
+        if coverage is None:
+            return False
+        else: return coverage >= 0.95
+
+    def get_metrics(self, info: dict) -> str:
+        return f"Coverage: {info.get("coverage", 0.0)}"
+
 
 if __name__ == "__main__":
     from savannah.data.dataset import DataSetConfig
