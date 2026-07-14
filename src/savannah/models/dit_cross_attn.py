@@ -1,23 +1,18 @@
-from savannah.models.encoders.language_encoder import LanguageEncoder
-from typing import Optional
+import warnings
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from einops import rearrange
 
+from savannah.models.encoders import LanguageEncoder, StateEncoder, VisionEncoder
+from savannah.models.encoders.language_encoder import LanguageEncoder
 from savannah.models.policy import Policy
-from savannah.models.encoders import VisionEncoder, LanguageEncoder, StateEncoder
 from savannah.nn import SelfAttention
 from savannah.nn.cross_attention import CrossAttention
-from savannah.nn.positional_embeddings import SinusoidalPositionalEncoding
 from savannah.nn.time_embedding import TimeEmbedding
 from savannah.objectives import PolicyObjective
-from savannah.utils.device import get_device
+from savannah.utils.log import logger
 from savannah.utils.observation import ObservationKey
 from savannah.utils.policy import PolicyOutput
-from savannah.utils.log import logger
-import warnings
 
 
 class DiTCrossAttnBlock(nn.Module):

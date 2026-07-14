@@ -1,13 +1,14 @@
 # tests/test_act_policy.py
-import torch
 import pytest
+import torch
+from savannah.models.vision_encoder import VisionEncoder
+
 from savannah.models.act import (
+    ACT_CVAE_Decoder,
+    ACT_CVAE_Encoder,
     ACTPolicy,
     ObservationKey,
-    ACT_CVAE_Encoder,
-    ACT_CVAE_Decoder,
 )
-from savannah.models.vision_encoder import VisionEncoder
 from savannah.models.backbones.resnet_backbone import ResNetBackbone
 
 B, H, W = 2, 96, 96

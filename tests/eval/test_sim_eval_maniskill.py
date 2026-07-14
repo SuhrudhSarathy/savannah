@@ -5,6 +5,7 @@ model quality — only that the rollout loop runs to completion without crashing
 
 import gymnasium as gym
 import pytest
+from policy_helpers import build_tiny_policy
 
 from savannah.data.dataset import DataSetConfig
 from savannah.tasks.maniskill import ManiSkillColorMatchingTask
@@ -12,8 +13,6 @@ from savannah.utils.device import get_device
 from savannah.utils.eval_and_log import evaluate_and_log
 from savannah.utils.log import setup_logging
 from savannah.utils.logger import ExperimentLogger
-
-from policy_helpers import build_tiny_policy
 
 setup_logging(level="WARNING")
 

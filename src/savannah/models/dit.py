@@ -1,18 +1,18 @@
-from savannah.utils.policy import PolicyOutput
-from savannah.objectives import PolicyObjective
-from savannah.models.encoders.language_encoder import LanguageEncoder
-from savannah.models.policy import Policy
-from typing import Optional
-from savannah.nn.self_attention import SelfAttention
-from savannah.nn.positional_embeddings import get_sinusoidal_position_embedding
-from savannah.nn.time_embedding import TimeEmbedding
-from savannah.models.encoders import StateEncoder, VisionEncoder
-from savannah.utils.log import logger
-from savannah.utils.observation import ObservationKey
+import warnings
 
 import torch
 import torch.nn as nn
-import warnings
+
+from savannah.models.encoders import StateEncoder, VisionEncoder
+from savannah.models.encoders.language_encoder import LanguageEncoder
+from savannah.models.policy import Policy
+from savannah.nn.positional_embeddings import get_sinusoidal_position_embedding
+from savannah.nn.self_attention import SelfAttention
+from savannah.nn.time_embedding import TimeEmbedding
+from savannah.objectives import PolicyObjective
+from savannah.utils.log import logger
+from savannah.utils.observation import ObservationKey
+from savannah.utils.policy import PolicyOutput
 
 
 class DiTBlock(nn.Module):

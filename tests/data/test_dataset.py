@@ -1,8 +1,7 @@
 import pytest
-import torch
-from savannah.utils.device import get_device
-from savannah.data.dataset import DataSetConfig, LerobotDatasetWrapper
 
+from savannah.data.dataset import DataSetConfig, LerobotDatasetWrapper
+from savannah.utils.device import get_device
 
 OBS_HORIZON = 3
 ACTION_HORIZON = 8

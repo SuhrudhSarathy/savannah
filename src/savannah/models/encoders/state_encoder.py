@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 
-from savannah.nn.positional_embeddings import get_sinusoidal_position_embedding
 from savannah.nn.time_embedding import TimeEmbedding
 
 

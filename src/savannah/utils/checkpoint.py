@@ -1,9 +1,9 @@
 import glob
 import os
 
-import wandb
 from omegaconf import DictConfig
 
+import wandb
 from savannah.utils.log import logger
 
 

@@ -1,7 +1,8 @@
-import numpy as np
-import wandb
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 
+import numpy as np
+
+import wandb
 from savannah.utils.log import logger
 
 

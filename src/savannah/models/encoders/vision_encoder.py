@@ -1,6 +1,7 @@
-from savannah.models.backbones import VisionFeatureExtractor
 import torch
 import torch.nn as nn
+
+from savannah.models.backbones import VisionFeatureExtractor
 
 
 class VisionEncoder(nn.Module):

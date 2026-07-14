@@ -1,12 +1,9 @@
 import sys
 from collections import deque
 
-from savannah.utils.observation import ObservationKey
-
 try:
     import imp
 except ImportError:
-    import importlib.util
     from types import ModuleType
 
     imp = ModuleType("imp")
@@ -83,12 +80,20 @@ def main(cfg: DictConfig) -> None:
             obs_history.append(raw_obs)
             done = terminated or truncated or task.is_success(info)
 
-            logger.info("Success={}, coverage={}, terminated={}, truncated={}", info["is_success"], info["coverage"], terminated, truncated)
+            logger.info(
+                "Success={}, coverage={}, terminated={}, truncated={}",
+                info["is_success"],
+                info["coverage"],
+                terminated,
+                truncated,
+            )
 
         success = task.is_success(info)
         successes += int(success)
         if success:
-            logger.success("Episode {} SUCCESS. Metrics: {}", ep, task.get_metrics(info))
+            logger.success(
+                "Episode {} SUCCESS. Metrics: {}", ep, task.get_metrics(info)
+            )
         else:
             logger.warning("Episode {} FAIL. Metrics: {}", ep, task.get_metrics(info))
 

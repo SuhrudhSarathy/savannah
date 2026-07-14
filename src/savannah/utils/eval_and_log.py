@@ -89,13 +89,10 @@ def evaluate_and_log(
             # 5. Step the environment
             raw_obs, reward, terminated, truncated, info = env.step(action_to_apply)
 
-
             obs_history.append(raw_obs)
-
 
             cum_reward += reward
             done = terminated or truncated
-
 
         # Tally metrics for this episode
         rewards.append(cum_reward)

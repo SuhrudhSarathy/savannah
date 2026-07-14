@@ -1,7 +1,6 @@
 import argparse
 
 import wandb
-
 from savannah.utils.log import logger, setup_logging
 
 

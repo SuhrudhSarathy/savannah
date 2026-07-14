@@ -1,12 +1,11 @@
+import math
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torchvision.models as models
 from einops import rearrange
 
 from savannah.models.backbones import VisionFeatureExtractor
-from savannah.utils.log import logger
-import math
 
 
 class LoRAConv2d(nn.Module):

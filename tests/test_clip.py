@@ -1,5 +1,6 @@
-from transformers import AutoTokenizer, CLIPTextModel
 from random import choice
+
+from transformers import AutoTokenizer, CLIPTextModel
 
 if __name__ == "__main__":
     model = CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32")

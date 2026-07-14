@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from fontTools.merge.layout import first
 from torch.optim import AdamW
 
 from savannah.models.policy import Policy

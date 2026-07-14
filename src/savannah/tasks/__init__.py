@@ -1,11 +1,12 @@
-import gymnasium as gym
-from gymnasium.wrappers import RecordVideo
 import cv2
+import gymnasium as gym
 import numpy as np
 import torch
+from gymnasium.wrappers import RecordVideo
+
+from savannah.utils.log import logger
 
 from .base import BaseRobotTask
-from savannah.utils.log import logger
 
 
 class ActionChunkVisualizer(gym.Wrapper):

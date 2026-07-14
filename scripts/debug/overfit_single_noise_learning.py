@@ -5,7 +5,6 @@ from savannah.utils.observation import ObservationKey
 try:
     import imp
 except ImportError:
-    import importlib.util
     from types import ModuleType
 
     imp = ModuleType("imp")
@@ -16,15 +15,13 @@ import os
 import hydra
 import torch
 import torch.nn.functional as F
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from torch.optim import AdamW
 from tqdm import tqdm
 
-from savannah.factory import build_policy, build_task
-from savannah.trainer.trainer import PolicyTrainer, TrainConfig
+from savannah.factory import build_policy
 from savannah.utils.device import get_device
 from savannah.utils.log import logger, setup_logging
-from savannah.utils.logger import ExperimentLogger
 
 
 @hydra.main(version_base=None, config_path="../../configs", config_name="config")

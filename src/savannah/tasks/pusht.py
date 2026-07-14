@@ -1,11 +1,11 @@
-import gym_pusht  # Registers the env
+from collections import deque
+
 import gymnasium as gym
 import numpy as np
 import torch
 
 from savannah.tasks import BaseRobotTask
 from savannah.utils.observation import ObservationKey
-from collections import deque
 
 
 class PushTTask(BaseRobotTask):
@@ -116,10 +116,11 @@ class PushTTask(BaseRobotTask):
         coverage = info.get("coverage", None)
         if coverage is None:
             return False
-        else: return coverage >= 0.95
+        else:
+            return coverage >= 0.95
 
     def get_metrics(self, info: dict) -> str:
-        return f"Coverage: {info.get("coverage", 0.0)}"
+        return f"Coverage: {info.get('coverage', 0.0)}"
 
 
 if __name__ == "__main__":

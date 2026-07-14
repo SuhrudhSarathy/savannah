@@ -1,18 +1,17 @@
-from typing import Optional
+import warnings
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
+from savannah.models.encoders import LanguageEncoder, StateEncoder, VisionEncoder
 from savannah.models.policy import Policy
-from savannah.models.encoders import VisionEncoder, LanguageEncoder, StateEncoder
+from savannah.nn.positional_embeddings import get_sinusoidal_position_embedding
 from savannah.nn.self_attention import SelfAttention
 from savannah.nn.time_embedding import TimeEmbedding
 from savannah.objectives import PolicyObjective
 from savannah.utils.log import logger
 from savannah.utils.observation import ObservationKey
 from savannah.utils.policy import PolicyOutput
-from savannah.nn.positional_embeddings import get_sinusoidal_position_embedding
-import warnings
 
 
 class EncoderBlock(nn.Module):

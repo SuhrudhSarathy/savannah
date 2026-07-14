@@ -1,13 +1,13 @@
 from abc import ABC, abstractmethod
-import torch
-import numpy as np
-import gymnasium as gym
-from typing import Dict, Any, Optional
+from collections import deque
+from typing import Any, Dict, Optional
 
-from savannah.utils.observation import ObservationKey
+import gymnasium as gym
+import numpy as np
+import torch
+
 from savannah.data.augmentation import ObservationAugmenter
 from savannah.data.dataset import DataSetConfig, LerobotDatasetWrapper
-from collections import deque
 
 
 class BaseRobotTask(ABC):

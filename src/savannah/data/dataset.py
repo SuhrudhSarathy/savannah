@@ -1,11 +1,10 @@
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
 import torch
 from hydra.core.config_store import ConfigStore
-from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision.transforms import v2
 

@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 from einops import rearrange, repeat
 
-from savannah.models.policy import Policy
 from savannah.models.encoders import VisionEncoder
+from savannah.models.policy import Policy
 from savannah.nn.time_embedding import TimeEmbedding
 from savannah.objectives import PolicyObjective
 from savannah.utils.observation import ObservationKey

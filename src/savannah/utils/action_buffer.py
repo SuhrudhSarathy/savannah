@@ -1,6 +1,6 @@
 import collections
+
 import torch
-import numpy as np
 
 
 class ActionBuffer:

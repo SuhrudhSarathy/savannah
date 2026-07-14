@@ -1,5 +1,3 @@
-import copy
-import math
 import os
 import signal
 from dataclasses import dataclass
@@ -7,18 +5,15 @@ from dataclasses import dataclass
 import torch
 from hydra.core.config_store import ConfigStore
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import LambdaLR
 from tqdm import tqdm
 
 from savannah.models.policy import Policy
 from savannah.tasks import BaseRobotTask
 from savannah.trainer.ema import EMA
 from savannah.trainer.scheduler import get_custom_scheduler
-from savannah.utils.device import get_device
 from savannah.utils.eval_and_log import evaluate_and_log
 from savannah.utils.log import logger
 from savannah.utils.logger import ExperimentLogger
-from savannah.utils.observation import ObservationKey
 
 
 @dataclass

@@ -3,7 +3,6 @@ import sys
 try:
     import imp
 except ImportError:
-    import importlib.util
     from types import ModuleType
 
     imp = ModuleType("imp")
