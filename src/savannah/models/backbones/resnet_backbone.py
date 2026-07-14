@@ -34,9 +34,9 @@ class ResNetBackbone(VisionFeatureExtractor):
     def __init__(self, out_channels: int):
         super().__init__()
         self._out_channels = out_channels
-        self.resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+        resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
 
-        self.backbone = nn.Sequential(*list(self.resnet.children())[:-2])
+        self.backbone = nn.Sequential(*list(resnet.children())[:-2])
         self.spatial_softmax = SpatialSoftmax()
         self.repoj = nn.Linear(2 * 512, out_channels)
 

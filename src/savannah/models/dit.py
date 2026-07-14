@@ -90,7 +90,7 @@ class DiTDecoderBlock(nn.Module):
         self.feedforward_dim = feedforward_dim
         self.dropout = dropout
 
-        self.attn_block = SelfAttention(embed_dim, num_attn_heads, mask)
+        self.attn_block = SelfAttention(embed_dim, num_attn_heads)
 
         self.ffn_block = nn.Sequential(
             nn.Linear(self.embed_dim, self.feedforward_dim),
@@ -103,7 +103,7 @@ class DiTDecoderBlock(nn.Module):
 
         self.dropout_layer = nn.Dropout(self.dropout)
 
-        self.adaln_block = nn.Linear(2 * self.embed_dim, 6 * self.embed_dim)
+        self.adaln_block = nn.Linear(self.embed_dim, 6 * self.embed_dim)
         self._init_adaln_zero()
 
     def _init_adaln_zero(self):
@@ -216,8 +216,8 @@ class DiTPolicy(Policy):
         self.camera_embedding = nn.Embedding(num_cameras, embed_dim)
 
         self.state_encoder = StateEncoder(self._state_dim, self.embed_dim)
+        self.language_encoder = language_encoder
         if language_encoder is not None:
-            self.language_encoder = language_encoder
             logger.debug("Initialised Language Encoder into the model")
 
         sinusoidal_position_embeddings = get_sinusoidal_position_embedding(
@@ -234,6 +234,10 @@ class DiTPolicy(Policy):
 
         # MultiChoice Attention computation
         self.multi_choice_attn = MultiChoiceAttention(encoder_num_blocks)
+        self.register_buffer("mask", torch.zeros(3, 3))
+
+        # Action reprojection
+        self.action_reprojection = nn.Linear(self.embed_dim, self._action_dim)
 
     @staticmethod
     def _debug_stat(name: str, t: torch.Tensor) -> None:
@@ -315,11 +319,41 @@ class DiTPolicy(Policy):
         x_cond_tokens_pooled = []
         x_cond = x_cond_tokens
         for enc in self.encoder:
-            x_cond = enc(x_cond_tokens)
+            x_cond = enc(x_cond)
             x_cond_tokens_pooled.append(x_cond.unsqueeze(-1))
 
         # Get the condition tokens from MultiChoice attention
+        # [(B, n_seq, embed_dim, 1)] -> (B, n_seq, embed_dim,  n_enc)
         x_cond_tokens_pooled = torch.cat(x_cond_tokens_pooled, dim=-1)
+        # (B, n_seq, embed_dim, n_enc) -> (B, n_seq, embed_dim)
         x_cond_tokens_pooled = self.multi_choice_attn(x_cond_tokens_pooled)
+        self._debug_stat("x_cond_tokens_pooled", x_cond_tokens_pooled)
 
-        # concat all this
+        # concat cond tokens with noisy state
+        x_dec_tokens = torch.cat([x_cond_tokens_pooled, x_noisy_actions], dim=1)
+        self._debug_stat("x_dec_tokens", x_dec_tokens)
+
+        # Create the mask for x_dec_tokens to act on
+        # Basically x_dec_tokens is [x_cond_tokens, x_noisy_actions]
+        n_cond = x_cond_tokens.shape[1]
+        self.mask = torch.full(
+            (x_dec_tokens.shape[1], x_dec_tokens.shape[1]),
+            False,
+            dtype=torch.bool,
+            device=x_dec_tokens.device,
+        )
+        self.mask[:n_cond, :n_cond] = True
+        self.mask[n_cond:, :n_cond] = True
+        self.mask[n_cond:, n_cond:] = True
+
+        x_dec_out = x_dec_tokens
+        for dec in self.decoder:
+            x_dec_out = dec(x_dec_out, self.mask, x_time)
+        self._debug_stat("x_dec_out", x_dec_out)
+
+        x_action_tokens = x_dec_out[:, n_cond:, ...]
+        self._debug_stat("x_action_tokens", x_action_tokens)
+
+        x_action = self.action_reprojection(x_action_tokens)
+        self._debug_stat("x_action", x_action)
+        return PolicyOutput(actions=x_action)

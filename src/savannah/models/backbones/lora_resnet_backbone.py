@@ -3,9 +3,9 @@ import math
 import torch
 import torch.nn as nn
 import torchvision.models as models
-from einops import rearrange
 
 from savannah.models.backbones import VisionFeatureExtractor
+from savannah.models.backbones.resnet_backbone import SpatialSoftmax
 
 
 class LoRAConv2d(nn.Module):
@@ -78,21 +78,27 @@ class LoRAResNetBackbone(VisionFeatureExtractor):
         self.backbone = nn.Sequential(*list(self.resnet.children())[:-2])
         self.add_lora(self.backbone)
 
+        # Matches ResNetBackbone's contract: pool the (B, 512, H', W') feature
+        # map from resnet18's layer4 into a flat (B, out_channels) descriptor,
+        # since VisionEncoder expects a single token per image, not one token
+        # per spatial location.
+        self.spatial_softmax = SpatialSoftmax()
+        self.channel_proj = nn.Linear(2 * 512, out_channels)
+
     @property
     def out_channels(self) -> int:
         return self._out_channels
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_out = self.backbone(x)
-        x_out_rearranged = rearrange(x_out, "b c h w -> b (h w) c")
-        return x_out_rearranged
+        x_pooled = self.spatial_softmax(x_out)
+        return self.channel_proj(x_pooled)
 
     def add_lora(self, model):
         for name, module in model.named_children():
             if isinstance(module, nn.Conv2d):
-                if module.kernel_size[0] > 1:
-                    lora_module = LoRAConv2d(module)
-                    setattr(model, name, lora_module)
+                lora_module = LoRAConv2d(module)
+                setattr(model, name, lora_module)
             else:
                 self.add_lora(module)
 
