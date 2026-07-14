@@ -58,7 +58,9 @@ class ObservationAugmenter:
     def __init__(self, config: AugmentationConfig):
         self.config = config
 
-    def augment_images(self, images: list[torch.Tensor], step: int) -> list[torch.Tensor]:
+    def augment_images(
+        self, images: list[torch.Tensor], step: int
+    ) -> list[torch.Tensor]:
         """images: list of (B, N, C, H, W) tensors, one per camera, float in [0, 1]."""
         if not self.config.enabled:
             return images
@@ -68,7 +70,9 @@ class ObservationAugmenter:
         if not self.config.enabled:
             return state
         cfg = self.config
-        eps = _decay(cfg.state_noise_initial, cfg.state_noise_final, step, cfg.decay_rate)
+        eps = _decay(
+            cfg.state_noise_initial, cfg.state_noise_final, step, cfg.decay_rate
+        )
         if eps <= 0:
             return state
         noise = (torch.rand_like(state) * 2 - 1) * eps
@@ -146,7 +150,9 @@ class ObservationAugmenter:
     def _speckle_noise(self, x: torch.Tensor, step: int) -> torch.Tensor:
         """Simulates camera sensor grain: multiplicative per-pixel Gaussian noise."""
         cfg = self.config
-        std = _decay(cfg.speckle_std_initial, cfg.speckle_std_final, step, cfg.decay_rate)
+        std = _decay(
+            cfg.speckle_std_initial, cfg.speckle_std_final, step, cfg.decay_rate
+        )
         if std <= 0:
             return x
         noise = torch.randn_like(x) * std
