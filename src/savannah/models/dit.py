@@ -2,6 +2,7 @@ import warnings
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from savannah.models.encoders import StateEncoder, VisionEncoder
 from savannah.models.encoders.language_encoder import LanguageEncoder
@@ -15,7 +16,66 @@ from savannah.utils.observation import ObservationKey
 from savannah.utils.policy import PolicyOutput
 
 
-class DiTBlock(nn.Module):
+class MultiChoiceAttention(nn.Module):
+    def __init__(self, num_encoders: int):
+        super().__init__()
+        weights = torch.zeros(num_encoders)
+        weights[-1] = 1.0
+        self.weight_matrix = nn.Parameter(weights)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        attn_weights = F.softmax(self.weight_matrix, dim=0)
+        x_out = torch.einsum("bsnd, d -> bsn", x, attn_weights)
+
+        return x_out
+
+
+class DiTEncoderBlock(nn.Module):
+    def __init__(
+        self,
+        embed_dim: int,
+        num_attn_heads: int,
+        feedforward_dim: int,
+        dropout: float = 0.1,
+    ):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_attn_heads = num_attn_heads
+        self.feedforward_dim = feedforward_dim
+        self.dropout = dropout
+
+        self.attn_block = SelfAttention(embed_dim, num_attn_heads)
+        self.ffn_block = nn.Sequential(
+            nn.Linear(self.embed_dim, self.feedforward_dim),
+            nn.GELU(),
+            nn.Linear(self.feedforward_dim, self.embed_dim),
+        )
+
+        self.layer_norm1 = nn.LayerNorm(self.embed_dim)
+        self.layer_norm2 = nn.LayerNorm(self.embed_dim)
+
+        self.dropout_layer = nn.Dropout(self.dropout)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x_norm = self.layer_norm1(x)
+        x_attn = self.attn_block(x_norm)
+
+        # Residual Connection
+        x = x + x_attn
+
+        # FFN Block
+        x_norm = self.layer_norm2(x)
+        x_ffn = self.ffn_block(x_norm)
+
+        # Residual Connection
+        x = x + x_ffn
+
+        # Dropout
+        x = self.dropout_layer(x)
+        return x
+
+
+class DiTDecoderBlock(nn.Module):
     def __init__(
         self,
         embed_dim: int,
@@ -30,7 +90,7 @@ class DiTBlock(nn.Module):
         self.feedforward_dim = feedforward_dim
         self.dropout = dropout
 
-        self.attn_block = SelfAttention(embed_dim, num_attn_heads)
+        self.attn_block = SelfAttention(embed_dim, num_attn_heads, mask)
 
         self.ffn_block = nn.Sequential(
             nn.Linear(self.embed_dim, self.feedforward_dim),
@@ -54,21 +114,23 @@ class DiTBlock(nn.Module):
         nn.init.constant_(self.adaln_block.weight, 0.0)
         nn.init.constant_(self.adaln_block.bias, 0.0)
 
-    def forward(self, x: torch.Tensor, kv: torch.Tensor) -> torch.Tensor:
-        # KV is the encoded information of the timestep
+    def forward(
+        self, x: torch.Tensor, mask: torch.Tensor, x_time: torch.Tensor
+    ) -> torch.Tensor:
+        # x_time: tokens matching to timestep of denoising
         # x: is the tokens that are input to the decoder and the condition tokens
 
         # AdaLN stuff
         beta1, gamma1, alpha1, beta2, gamma2, alpha2 = torch.split(
-            self.adaln_block(kv),
+            self.adaln_block(x_time),
             self.embed_dim,
             dim=-1,
         )
 
-        # Self Attention Block
+        # Masked-Self Attention Block
         x_norm = self.layer_norm1(x)
         x_pre_attn = gamma1 * x_norm + beta1
-        x_attn = self.attn_block(x_pre_attn)
+        x_attn = self.attn_block(x_pre_attn, mask)
         x_post_attn = alpha1 * x_attn
 
         # Residual Connection
@@ -93,10 +155,14 @@ class DiTPolicy(Policy):
     def __init__(
         self,
         embed_dim: int,
-        num_blocks: int,
-        num_attn_heads: int,
-        feedforward_dim: int,
-        dropout: float,
+        encoder_num_blocks: int,
+        encoder_num_attn_heads: int,
+        encoder_feedforward_dim: int,
+        encoder_dropout: float,
+        decoder_num_blocks: int,
+        decoder_num_attn_heads: int,
+        decoder_feedforward_dim: int,
+        decoder_dropout: float,
         state_dim: int,
         action_dim: int,
         action_horizon: int,
@@ -116,10 +182,27 @@ class DiTPolicy(Policy):
         self.num_cameras = num_cameras
         self.objective = objective
 
+        self.encoder = nn.ModuleList(
+            [
+                DiTEncoderBlock(
+                    embed_dim,
+                    encoder_num_attn_heads,
+                    encoder_feedforward_dim,
+                    encoder_dropout,
+                )
+                for _ in range(encoder_num_blocks)
+            ]
+        )
+
         self.decoder = nn.ModuleList(
             [
-                DiTBlock(embed_dim, num_attn_heads, feedforward_dim, dropout)
-                for _ in range(num_blocks)
+                DiTDecoderBlock(
+                    embed_dim,
+                    decoder_num_attn_heads,
+                    decoder_feedforward_dim,
+                    decoder_dropout,
+                )
+                for _ in range(decoder_num_blocks)
             ]
         )
 
@@ -148,6 +231,9 @@ class DiTPolicy(Policy):
             nn.GELU(),
             nn.Linear(self.embed_dim, self.embed_dim),
         )
+
+        # MultiChoice Attention computation
+        self.multi_choice_attn = MultiChoiceAttention(encoder_num_blocks)
 
     @staticmethod
     def _debug_stat(name: str, t: torch.Tensor) -> None:
@@ -219,10 +305,21 @@ class DiTPolicy(Policy):
         self._debug_stat("x_noisy_actions (+ pos embed)", x_noisy_actions)
 
         if x_language is None:
-            x_tokens = torch.cat([x_cam_tokens, x_state, x_noisy_actions], dim=1)
+            x_cond_tokens = torch.cat([x_cam_tokens, x_state], dim=1)
         else:
-            x_tokens = torch.cat(
-                [x_language, x_cam_tokens, x_state, x_noisy_actions], dim=1
-            )
+            x_cond_tokens = torch.cat([x_language, x_cam_tokens, x_state], dim=1)
 
-        self._debug_stat("x_cond", x_tokens)
+        self._debug_stat("x_cond", x_cond_tokens)
+
+        # Pass the condition tokens through the encoders
+        x_cond_tokens_pooled = []
+        x_cond = x_cond_tokens
+        for enc in self.encoder:
+            x_cond = enc(x_cond_tokens)
+            x_cond_tokens_pooled.append(x_cond.unsqueeze(-1))
+
+        # Get the condition tokens from MultiChoice attention
+        x_cond_tokens_pooled = torch.cat(x_cond_tokens_pooled, dim=-1)
+        x_cond_tokens_pooled = self.multi_choice_attn(x_cond_tokens_pooled)
+
+        # concat all this

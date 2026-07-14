@@ -16,7 +16,9 @@ class SelfAttention(nn.Module):
         self.attn_projection = nn.Linear(self.embed_dim, 3 * self.embed_dim)
         self.reproj = nn.Linear(self.embed_dim, self.embed_dim)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
         # x (B, T, n_embed)
         #
         # (B, T, n_embed) -> (B, T, 3 * n_embed)
@@ -46,7 +48,9 @@ class SelfAttention(nn.Module):
         )
 
         if self.use_sdpa:
-            attn = F.scaled_dot_product_attention(q, k, v, is_causal=False)
+            attn = F.scaled_dot_product_attention(
+                q, k, v, is_causal=False, attn_mask=mask
+            )
 
         else:
             k_T = rearrange(k, "b nh t hs -> b nh hs t")
@@ -54,6 +58,10 @@ class SelfAttention(nn.Module):
             # Attention
             # (b, nh, t, hs) @ (b, nh, hs, t) -> (b, nh, t, t)
             attn = q @ k_T / sqrt(k.shape[-1])
+
+            if self.mask is not None:
+                attn = attn.masked_fill(~mask, -1e9)
+
             attn = F.softmax(attn, dim=-1)
             # (b, nh, t, t) @ (b, nh, t, hs) -> (b, nh, t, hs)
             attn = attn @ v

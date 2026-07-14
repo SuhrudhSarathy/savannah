@@ -26,6 +26,7 @@ dependencies = [
     "loguru",
     "mani-skill>=3.0.1",
     "pin; sys_platform == 'darwin'",
+    "pre-commit>=4.5.1",
 ]
 
 [project.optional-dependencies]
