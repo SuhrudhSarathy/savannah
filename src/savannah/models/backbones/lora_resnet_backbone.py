@@ -73,7 +73,7 @@ class LoRAResNetBackbone(VisionFeatureExtractor):
     def __init__(self, out_channels: int, image_size: int = 128):
         super().__init__()
         self._out_channels = out_channels
-        # ResNet18 downsamples spatially by 32× (5 pooling/stride-2 ops).
+        # ResNet18 downsamples spatially by 32x (5 pooling/stride-2 ops).
         # tokens_per_image = (H // 32) * (W // 32) for a square input.
         spatial = image_size // 32
         self._tokens_per_image = spatial * spatial
