@@ -5,7 +5,7 @@ import torch.nn as nn
 import torchvision.models as models
 
 from savannah.models.backbones import VisionFeatureExtractor
-from savannah.models.backbones.resnet_backbone import SpatialSoftmax
+from einops import rearrange
 
 
 class LoRAConv2d(nn.Module):
@@ -70,29 +70,37 @@ class LoRAConv2d(nn.Module):
 
 
 class LoRAResNetBackbone(VisionFeatureExtractor):
-    def __init__(self, out_channels: int):
+    def __init__(self, out_channels: int, image_size: int = 128):
         super().__init__()
         self._out_channels = out_channels
+        # ResNet18 downsamples spatially by 32× (5 pooling/stride-2 ops).
+        # tokens_per_image = (H // 32) * (W // 32) for a square input.
+        spatial = image_size // 32
+        self._tokens_per_image = spatial * spatial
+
         self.resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
 
         self.backbone = nn.Sequential(*list(self.resnet.children())[:-2])
+        self.replace_bn_with_gn(self.backbone)
         self.add_lora(self.backbone)
 
-        # Matches ResNetBackbone's contract: pool the (B, 512, H', W') feature
-        # map from resnet18's layer4 into a flat (B, out_channels) descriptor,
-        # since VisionEncoder expects a single token per image, not one token
-        # per spatial location.
-        self.spatial_softmax = SpatialSoftmax()
-        self.channel_proj = nn.Linear(2 * 512, out_channels)
+        if out_channels != 512:
+            self.channel_proj = nn.Linear(512, out_channels)
+        else:
+            self.channel_proj = nn.Identity()
 
     @property
     def out_channels(self) -> int:
         return self._out_channels
 
+    @property
+    def tokens_per_image(self) -> int:
+        return self._tokens_per_image
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_out = self.backbone(x)
-        x_pooled = self.spatial_softmax(x_out)
-        return self.channel_proj(x_pooled)
+        x_out = self.backbone(x)  # (B, C, H, W)
+        x_out = rearrange(x_out, "b c h w -> b (h w) c")
+        return self.channel_proj(x_out)
 
     def add_lora(self, model):
         for name, module in model.named_children():
@@ -123,3 +131,22 @@ class LoRAResNetBackbone(VisionFeatureExtractor):
                 print(f"Unmerged LoRA weights for layer: {name}")
             else:
                 self.unmerge_lora(module)
+
+    def replace_bn_with_gn(self, model, num_groups=32):
+        for name, module in model.named_children():
+            if isinstance(module, nn.BatchNorm2d):
+                # Get the number of channels from the existing BN layer
+                num_channels = module.num_features
+
+                # Ensure num_groups is valid (must divide num_channels)
+                # Fallback to 1 group (LayerNorm style) if 32 doesn't divide evenly
+                actual_groups = num_groups if num_channels % num_groups == 0 else 1
+
+                # Create the new GroupNorm layer
+                gn = nn.GroupNorm(actual_groups, num_channels)
+
+                # Replace the layer in the model
+                setattr(model, name, gn)
+            else:
+                # Recurse through sub-modules (like Sequential or custom Blocks)
+                self.replace_bn_with_gn(module, num_groups)

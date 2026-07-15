@@ -2,10 +2,12 @@ import torch
 import torch.nn as nn
 from einops import rearrange, repeat
 
-from savannah.models.encoders import VisionEncoder
+from savannah.models.encoders import VisionEncoder, StateEncoder
 from savannah.models.policy import Policy
 from savannah.nn.time_embedding import TimeEmbedding
 from savannah.objectives import PolicyObjective
+from savannah.utils.debug import debug_stat
+from savannah.utils.log import logger
 from savannah.utils.observation import ObservationKey
 from savannah.utils.policy import PolicyOutput
 
@@ -268,11 +270,18 @@ class UNetPolicy(Policy):
         # Camera Embedding
         self.camera_embedding = nn.Embedding(num_cameras, self.embed_dim)
 
-        # Condition dim = [time + vision tokens (one per cam per obs frame) + state]
+        self.state_encoder = StateEncoder(state_dim, embed_dim)
+
+        # Condition dim = [time + vision tokens + state]
+        # vision tokens: N_cams x N_obs x tokens_per_image x embed_dim
+        self.n_vision_tokens = (
+            num_cameras * num_obs * vision_encoder.tokens_per_image * self.embed_dim
+        )
+        self.n_state_tokens = num_obs * self.embed_dim
+        self.n_time_tokens = 1 * self.embed_dim
+
         self.condition_dim = (
-            self.embed_dim
-            + num_cameras * num_obs * self.embed_dim
-            + num_obs * self.state_dim
+            self.n_time_tokens + self.n_vision_tokens + self.n_state_tokens
         )
 
         self.cond_projection_mlp = nn.Sequential(
@@ -331,43 +340,70 @@ class UNetPolicy(Policy):
         if noisy_actions is None:
             raise AssertionError("Pass noisy action for the model to run")
 
+        for cam_idx, img in enumerate(x_img):
+            debug_stat(f"x_img[{cam_idx}] (raw)", img)
+        debug_stat("x_state (raw)", x_state)
+        debug_stat("x_time (raw)", x_time)
+        debug_stat("noisy_actions (raw)", noisy_actions)
+
         # (B,) -> (B, 1) optionally
         if x_time.dim() == 1:
             x_time = x_time.unsqueeze(1)
 
         # (B, 1) -> (B, embed_dim)
         x_time_cond = self.time_embedding(x_time)
+        debug_stat("x_time_cond", x_time_cond)
 
         # (B, num_cameras * num_obs, embed_dim) -> (B, num_cameras * num_obs * embed_dim)
         x_cam_tokens = self._encode_cameras(x_img)
+        debug_stat("x_cam_tokens", x_cam_tokens)
+
         x_cam_cond = rearrange(x_cam_tokens, "b n d -> b (n d)")
+        debug_stat("x_cam_cond", x_cam_cond)
 
         # (B, num_obs, state_dim) -> (B, num_obs * state_dim)
-        x_state_cond = rearrange(x_state, "b n s -> b (n s)")
+        x_state_tokens = self.state_encoder(x_state)
+        x_state_cond = rearrange(x_state_tokens, "b n s -> b (n s)")
+        debug_stat("x_state_cond", x_state_cond)
+
+        logger.debug(
+            "Time tokens: {} Vision tokens: {} State Tokens: {}",
+            self.n_time_tokens,
+            self.n_vision_tokens,
+            self.n_state_tokens,
+        )
 
         # (B, condition_dim)
         x_cond = torch.cat([x_time_cond, x_cam_cond, x_state_cond], dim=-1)
+        debug_stat("x_cond (pre-mlp)", x_cond)
         x_cond = self.cond_projection_mlp(x_cond)
+        debug_stat("x_cond (post-mlp)", x_cond)
 
         # (B, action_horizon, action_dim) -> (B, action_dim, action_horizon)
         x = rearrange(noisy_actions, "b t a -> b a t")
         x = self.init_conv(x)
+        debug_stat("x (init_conv)", x)
 
         residuals = []
-        for encoder in self.encoders:
+        for i, encoder in enumerate(self.encoders):
             x = encoder(x, x_cond)
+            debug_stat(f"x (encoder[{i}])", x)
             residuals.append(x)
 
         x = self.midcoder(x, x_cond)
+        debug_stat("x (midcoder)", x)
 
-        for decoder in self.decoders:
+        for i, decoder in enumerate(self.decoders):
             x_res = residuals.pop()
             x = torch.cat([x, x_res], dim=1)
             x = decoder(x, x_cond)
+            debug_stat(f"x (decoder[{i}])", x)
 
         x = self.final_conv(x)
+        debug_stat("x (final_conv)", x)
 
         # (B, action_dim, action_horizon) -> (B, action_horizon, action_dim)
         x_out_action = rearrange(x, "b a t -> b t a")
+        debug_stat("x_out_action", x_out_action)
 
         return PolicyOutput(actions=x_out_action)

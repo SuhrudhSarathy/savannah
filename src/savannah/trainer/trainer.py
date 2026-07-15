@@ -52,7 +52,9 @@ class PolicyTrainer:
 
         # Setup Optimizer
         self.optimizer = AdamW(
-            self.policy.parameters(), lr=self.config.lr, weight_decay=1e-4
+            [p for p in self.policy.parameters() if p.requires_grad],
+            lr=self.config.lr,
+            weight_decay=1e-4,
         )
 
         # Setup Scheduler

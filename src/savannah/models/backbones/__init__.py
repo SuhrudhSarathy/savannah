@@ -7,12 +7,23 @@ import torch.nn as nn
 class VisionFeatureExtractor(ABC, nn.Module):
     """
     Any backbone that takes (B, 3, H, W) and returns
-    spatial features (B, out_channels, H', W').
+    either a flat descriptor (B, out_channels) or a token sequence
+    (B, tokens_per_image, out_channels).
     """
 
     @property
     @abstractmethod
     def out_channels(self) -> int: ...
+
+    @property
+    @abstractmethod
+    def tokens_per_image(self) -> int:
+        """Number of embedding vectors produced per input image.
+
+        Pooling backbones (e.g. ResNetBackbone with SpatialSoftmax) return 1.
+        Spatial backbones (e.g. LoRAResNetBackbone) return H' * W'.
+        """
+        ...
 
     @abstractmethod
     def forward(self, x: torch.Tensor) -> torch.Tensor: ...
@@ -38,6 +49,10 @@ class DummyVisionBackbone(VisionFeatureExtractor):
     @property
     def out_channels(self) -> int:
         return self._out_channels
+
+    @property
+    def tokens_per_image(self) -> int:
+        return 1
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Expected input: (B, 3, H, W)

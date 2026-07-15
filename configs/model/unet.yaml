@@ -18,5 +18,6 @@ vision_encoder:
   _target_: savannah.models.encoders.vision_encoder.VisionEncoder
   embed_dim: ${model.embed_dim}
   backbone:
-    _target_: savannah.models.backbones.resnet_backbone.ResNetBackbone
-    out_channels: 96
+    _target_: savannah.models.backbones.lora_resnet_backbone.LoRAResNetBackbone
+    out_channels: 512
+    image_size: ${task.config.image_size}

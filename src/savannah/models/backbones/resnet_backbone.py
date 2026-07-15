@@ -48,6 +48,10 @@ class ResNetBackbone(VisionFeatureExtractor):
     def out_channels(self) -> int:
         return self._out_channels
 
+    @property
+    def tokens_per_image(self) -> int:
+        return 1
+
     def forward(self, x):
         return self.module(x)
 

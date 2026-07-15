@@ -14,7 +14,7 @@ OUT_CHANNELS = 32
 @pytest.fixture
 def backbone():
     torch.manual_seed(0)
-    return LoRAResNetBackbone(out_channels=OUT_CHANNELS)
+    return LoRAResNetBackbone(out_channels=OUT_CHANNELS, image_size=H)
 
 
 def _lora_modules(backbone):
@@ -24,12 +24,20 @@ def _lora_modules(backbone):
 def test_output_shape(backbone):
     x = torch.randn(B, 3, H, W)
     out = backbone(x)
-    # Must be a flat (B, out_channels) descriptor -- VisionEncoder is the only
-    # consumer of this backbone and expects a single token per image, matching
-    # ResNetBackbone's SpatialSoftmax-pooled contract (not one token per
-    # spatial location).
-    assert out.shape == (B, OUT_CHANNELS)
+    assert out.shape[-1] == OUT_CHANNELS
     assert backbone.out_channels == OUT_CHANNELS
+
+
+def test_output_shape_with_know_output(backbone):
+    x = torch.randn(B, 3, 96, 96)
+    out = backbone(x)
+    assert out.shape == (B, 9, OUT_CHANNELS)
+    assert backbone.out_channels == OUT_CHANNELS
+
+
+def test_tokens_per_image(backbone):
+    # 64×64 input → ResNet18 downsamples by 32 → 2×2 = 4 tokens
+    assert backbone.tokens_per_image == (H // 32) ** 2
 
 
 def test_plugs_into_vision_encoder(backbone):
@@ -38,7 +46,7 @@ def test_plugs_into_vision_encoder(backbone):
     embed_dim = 16
     encoder = VisionEncoder(backbone, embed_dim=embed_dim)
     out = encoder(torch.randn(B, 3, H, W))
-    assert out.shape == (B, 1, embed_dim)
+    assert out.shape == (B, backbone.tokens_per_image, embed_dim)
 
 
 def test_lora_wrapped_convs_have_original_frozen(backbone):

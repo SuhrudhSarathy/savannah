@@ -11,6 +11,7 @@ from savannah.nn.positional_embeddings import get_sinusoidal_position_embedding
 from savannah.nn.self_attention import SelfAttention
 from savannah.nn.time_embedding import TimeEmbedding
 from savannah.objectives import PolicyObjective
+from savannah.utils.debug import debug_stat
 from savannah.utils.log import logger
 from savannah.utils.observation import ObservationKey
 from savannah.utils.policy import PolicyOutput
@@ -239,19 +240,6 @@ class DiTPolicy(Policy):
         # Action reprojection
         self.action_reprojection = nn.Linear(self.embed_dim, self._action_dim)
 
-    @staticmethod
-    def _debug_stat(name: str, t: torch.Tensor) -> None:
-        logger.debug(
-            "{}: shape={}, min={:.6f}, max={:.6f}, mean={:.6f}, nan={}, inf={}",
-            name,
-            tuple(t.shape),
-            t.min().item(),
-            t.max().item(),
-            t.mean().item(),
-            torch.isnan(t).any().item(),
-            torch.isinf(t).any().item(),
-        )
-
     def forward(self, obs: dict[str, torch.Tensor], *args, **kwargs) -> PolicyOutput:
         x_img = obs[ObservationKey.images]
         x_state = obs[ObservationKey.state]
@@ -259,9 +247,9 @@ class DiTPolicy(Policy):
         x_language = obs.get(ObservationKey.language, None)
 
         for cam_idx, img in enumerate(x_img):
-            self._debug_stat(f"x_img[{cam_idx}] (raw)", img)
-        self._debug_stat("x_state (raw)", x_state)
-        self._debug_stat("x_time (raw)", x_time)
+            debug_stat(f"x_img[{cam_idx}] (raw)", img)
+        debug_stat("x_state (raw)", x_state)
+        debug_stat("x_time (raw)", x_time)
         if x_language is not None:
             logger.debug("x_language (raw) {}", x_language)
 
@@ -269,15 +257,15 @@ class DiTPolicy(Policy):
         noisy_actions = kwargs.get("noisy_actions", None)
         if noisy_actions is None:
             raise AssertionError("Pass noisy action for the model to run")
-        self._debug_stat("noisy_actions (raw)", noisy_actions)
+        debug_stat("noisy_actions (raw)", noisy_actions)
 
         # (B, T, embed_dim)
         x_cam_tokens = self._encode_cameras(x_img)
-        self._debug_stat("x_cam_tokens", x_cam_tokens)
+        debug_stat("x_cam_tokens", x_cam_tokens)
 
         # (B, N, state_dim) -> (B, N, embedding_dim)
         x_state = self.state_encoder(x_state)
-        self._debug_stat("x_state (embedded)", x_state)
+        debug_stat("x_state (embedded)", x_state)
 
         if x_language is not None:
             if self.language_encoder is None:
@@ -290,7 +278,7 @@ class DiTPolicy(Policy):
             else:
                 # (B, xx, embed_dim)
                 x_language = self.language_encoder(x_language)
-                self._debug_stat("x_lang", x_language)
+                debug_stat("x_lang", x_language)
 
         # (B,) -> (B, 1) optionally
         if len(x_time.shape) == 1:
@@ -298,22 +286,22 @@ class DiTPolicy(Policy):
 
         # (B, 1) -> (B, 1, embed_dim)
         x_time = self.time_embedding(x_time).unsqueeze(1)
-        self._debug_stat("x_time (embedded)", x_time)
+        debug_stat("x_time (embedded)", x_time)
 
         # Project the noisy actions to embeding space
         # (B, N_obs, action_dim) -> (B, N_obs, embed_dim)
         x_noisy_actions = self.action_embedding(noisy_actions)
-        self._debug_stat("x_noisy_actions (embedded)", x_noisy_actions)
+        debug_stat("x_noisy_actions (embedded)", x_noisy_actions)
 
         x_noisy_actions = x_noisy_actions + self.action_time_embedding
-        self._debug_stat("x_noisy_actions (+ pos embed)", x_noisy_actions)
+        debug_stat("x_noisy_actions (+ pos embed)", x_noisy_actions)
 
         if x_language is None:
             x_cond_tokens = torch.cat([x_cam_tokens, x_state], dim=1)
         else:
             x_cond_tokens = torch.cat([x_language, x_cam_tokens, x_state], dim=1)
 
-        self._debug_stat("x_cond", x_cond_tokens)
+        debug_stat("x_cond", x_cond_tokens)
 
         # Pass the condition tokens through the encoders
         x_cond_tokens_pooled = []
@@ -327,11 +315,11 @@ class DiTPolicy(Policy):
         x_cond_tokens_pooled = torch.cat(x_cond_tokens_pooled, dim=-1)
         # (B, n_seq, embed_dim, n_enc) -> (B, n_seq, embed_dim)
         x_cond_tokens_pooled = self.multi_choice_attn(x_cond_tokens_pooled)
-        self._debug_stat("x_cond_tokens_pooled", x_cond_tokens_pooled)
+        debug_stat("x_cond_tokens_pooled", x_cond_tokens_pooled)
 
         # concat cond tokens with noisy state
         x_dec_tokens = torch.cat([x_cond_tokens_pooled, x_noisy_actions], dim=1)
-        self._debug_stat("x_dec_tokens", x_dec_tokens)
+        debug_stat("x_dec_tokens", x_dec_tokens)
 
         # Create the mask for x_dec_tokens to act on
         # Basically x_dec_tokens is [x_cond_tokens, x_noisy_actions]
@@ -349,11 +337,11 @@ class DiTPolicy(Policy):
         x_dec_out = x_dec_tokens
         for dec in self.decoder:
             x_dec_out = dec(x_dec_out, self.mask, x_time)
-        self._debug_stat("x_dec_out", x_dec_out)
+        debug_stat("x_dec_out", x_dec_out)
 
         x_action_tokens = x_dec_out[:, n_cond:, ...]
-        self._debug_stat("x_action_tokens", x_action_tokens)
+        debug_stat("x_action_tokens", x_action_tokens)
 
         x_action = self.action_reprojection(x_action_tokens)
-        self._debug_stat("x_action", x_action)
+        debug_stat("x_action", x_action)
         return PolicyOutput(actions=x_action)

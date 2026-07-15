@@ -13,14 +13,18 @@ class VisionEncoder(nn.Module):
     def __init__(self, backbone: VisionFeatureExtractor, embed_dim: int):
         super().__init__()
         self.backbone = backbone
-
-        # Backbone returns a flat global descriptor (B, out_channels) —
-        # e.g. SpatialSoftmax keypoints — so project it to a single token.
         self.proj = nn.Linear(backbone.out_channels, embed_dim)
 
+    @property
+    def tokens_per_image(self) -> int:
+        return self.backbone.tokens_per_image
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        features = self.backbone(x)  # (B, out_channels)
+        features = self.backbone(x)
 
-        features = self.proj(features)  # (B, embed_dim)
+        # Pooling backbones (e.g. ResNetBackbone) return (B, out_channels).
+        # Normalize to (B, 1, out_channels) so callers always get 3D tokens.
+        if features.dim() == 2:
+            features = features.unsqueeze(1)
 
-        return features.unsqueeze(1)  # (B, 1, embed_dim)
+        return self.proj(features)  # (B, T_V, embed_dim)
