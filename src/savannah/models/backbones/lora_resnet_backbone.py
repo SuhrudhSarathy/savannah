@@ -70,13 +70,22 @@ class LoRAConv2d(nn.Module):
 
 
 class LoRAResNetBackbone(VisionFeatureExtractor):
-    def __init__(self, out_channels: int, image_size: int = 128):
+    def __init__(
+        self,
+        out_channels: int,
+        image_size: int = 128,
+        lora_rank: int = 20,
+        lora_alpha: int = 40,
+    ):
         super().__init__()
         self._out_channels = out_channels
         # ResNet18 downsamples spatially by 32x (5 pooling/stride-2 ops).
         # tokens_per_image = (H // 32) * (W // 32) for a square input.
         spatial = image_size // 32
         self._tokens_per_image = spatial * spatial
+
+        self.lora_rank = lora_rank
+        self.lora_alpha = lora_alpha
 
         self.resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
 
@@ -105,7 +114,7 @@ class LoRAResNetBackbone(VisionFeatureExtractor):
     def add_lora(self, model):
         for name, module in model.named_children():
             if isinstance(module, nn.Conv2d):
-                lora_module = LoRAConv2d(module)
+                lora_module = LoRAConv2d(module, self.lora_rank, self.lora_alpha)
                 setattr(model, name, lora_module)
             else:
                 self.add_lora(module)

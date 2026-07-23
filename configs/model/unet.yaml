@@ -21,3 +21,5 @@ vision_encoder:
     _target_: savannah.models.backbones.lora_resnet_backbone.LoRAResNetBackbone
     out_channels: 512
     image_size: ${task.config.image_size}
+    lora_rank: 20
+    lora_alpha: 40

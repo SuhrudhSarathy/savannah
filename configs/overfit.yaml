@@ -1,5 +1,5 @@
 defaults:
-  - model: dit_adaln
+  - model: unet
   - task: pusht
   - _self_
 

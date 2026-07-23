@@ -1,0 +1,70 @@
+from savannah.models.backbones import VisionFeatureExtractor
+import torch
+import torch.nn as nn
+from transformers import AutoProcessor, CLIPVisionModel
+
+
+class CLIPBackbone(VisionFeatureExtractor):
+    def __init__(
+        self,
+        out_channels: int,
+        image_size: int,
+        base_model: str = "openai/clip-vit-base-patch32",
+        use_eos_only: bool = True,
+    ):
+        super().__init__()
+
+        self._out_channels = out_channels
+        self.base_model = base_model
+        self.use_eos_only = use_eos_only
+
+        self.model = CLIPVisionModel.from_pretrained(self.base_model)
+        self.processor = AutoProcessor.from_pretrained(self.base_model)
+
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+        # CLIPVisionModel (unlike CLIPModel) has no projection head, so both
+        # pooler_output and last_hidden_state are sized by hidden_size.
+        self.clip_dim = self.model.config.hidden_size
+
+        if self.clip_dim != self.out_channels:
+            self.projection = nn.Linear(self.clip_dim, self.out_channels)
+        else:
+            self.projection = nn.Identity()
+
+        if use_eos_only:
+            self._tokens_per_image = 1
+        else:
+            # The processor resizes any input to the model's configured
+            # image_size, so the patch grid is fixed regardless of the
+            # image_size passed to this constructor.
+            patches_per_side = (
+                self.model.config.image_size // self.model.config.patch_size
+            )
+            self._tokens_per_image = (
+                patches_per_side * patches_per_side + 1
+            )  # + CLS token
+
+    @property
+    def out_channels(self) -> int:
+        return self._out_channels
+
+    @property
+    def tokens_per_image(self) -> int:
+        return self._tokens_per_image
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        inputs = self.processor(x, return_tensors="pt")
+        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+
+        self.model.eval()
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+
+        if self.use_eos_only:
+            features = outputs.pooler_output.unsqueeze(1)
+        else:
+            features = outputs.last_hidden_state
+
+        return self.projection(features)

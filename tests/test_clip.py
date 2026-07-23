@@ -1,8 +1,11 @@
 from random import choice
 
-from transformers import AutoTokenizer, CLIPTextModel
+from transformers import AutoTokenizer, CLIPTextModel, CLIPVisionModel, AutoProcessor
 
-if __name__ == "__main__":
+import torch
+
+
+def test_text():
     model = CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32")
     tokeniser = AutoTokenizer.from_pretrained("openai/clip-vit-base-patch32")
 
@@ -19,3 +22,19 @@ if __name__ == "__main__":
     pooled_output = output.pooler_output
 
     print(pooled_output.shape)
+
+
+def test_image():
+    model = CLIPVisionModel.from_pretrained("openai/clip-vit-base-patch32")
+    processor = AutoProcessor.from_pretrained("openai/clip-vit-base-patch32")
+
+    img = torch.randn(32, 3, 96, 96)
+    inputs = processor(images=img, return_tensors="pt")
+    outputs = model(**inputs)
+    pooled_output = outputs.pooler_output
+
+    print(pooled_output.shape)
+
+
+if __name__ == "__main__":
+    test_image()
