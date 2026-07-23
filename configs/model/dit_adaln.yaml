@@ -22,8 +22,9 @@ vision_encoder:
   _target_: savannah.models.encoders.vision_encoder.VisionEncoder
   embed_dim: ${model.embed_dim}
   backbone:
-    _target_: savannah.models.backbones.resnet_backbone.ResNetBackbone
-    out_channels: 96
+    _target_: savannah.models.backbones.clip_backbone.CLIPBackbone
+    out_channels: 64
+    image_size: ${task.config.image_size}
 language_encoder:
   null
   # _target_: savannah.models.encoders.language_encoder.LanguageEncoder
