@@ -1,6 +1,7 @@
 defaults:
   - model: dit_lora_ddim
   - task: pusht
+  - augmentation: default
   - _self_
 
 overfit:

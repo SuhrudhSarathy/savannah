@@ -25,4 +25,5 @@ vision_encoder:
   backbone:
     _target_: savannah.models.backbones.lora_resnet_backbone.LoRAResNetBackbone
     out_channels: 96
+    use_spatial_softmax: false
 language_encoder: null

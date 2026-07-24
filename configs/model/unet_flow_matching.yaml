@@ -16,3 +16,4 @@ vision_encoder:
   backbone:
     _target_: savannah.models.backbones.resnet_backbone.ResNetBackbone
     out_channels: 96
+    use_spatial_softmax: true

@@ -20,4 +20,6 @@ vision_encoder:
   backbone:
     _target_: savannah.models.backbones.resnet_backbone.ResNetBackbone
     out_channels: 96
+    image_size: ${task.config.image_size}
+    use_spatial_softmax: false
 language_encoder: null

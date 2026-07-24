@@ -1,6 +1,7 @@
 defaults:
   - model: dit_adaln
   - task: pusht
+  - augmentation: default
   - _self_
 
 overfit:

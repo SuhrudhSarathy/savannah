@@ -2,6 +2,7 @@ defaults:
   - model: dit_adaln
   - task: pusht
   - trainer: default
+  - augmentation: default
   - _self_
 
 wandb:
