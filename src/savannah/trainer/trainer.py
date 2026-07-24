@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import torch
 from hydra.core.config_store import ConfigStore
 from torch.optim import AdamW
+from torch.amp.grad_scaler import GradScaler
 from tqdm import tqdm
 
 from savannah.models.policy import Policy
@@ -29,6 +30,7 @@ class TrainConfig:
     ema_decay: float = 0.9999
     checkpoint_dir: str = "checkpoints"
     artifact_name: str = "model"
+    gradient_accumulation_steps: int = 4
 
 
 cs = ConfigStore.instance()
@@ -71,6 +73,9 @@ class PolicyTrainer:
         self.global_step = 0
         self.best_success_rate = -1.0
         self.best_val_loss = 10000.0
+
+        # Setup Gradscaler
+        self.grad_scaler = GradScaler(self.device.type)
 
         os.makedirs(self.config.checkpoint_dir, exist_ok=True)
 
@@ -121,28 +126,35 @@ class PolicyTrainer:
             # 2. Format batch using the Task (augmentation decays with global_step)
             batch = self.task.format_batch(raw_batch, step=self.global_step)
 
-            # 3. Forward Pass & Loss (Policy handles all ODE matching internally!)
-            loss = self.policy.compute_loss(batch)
+            with torch.autocast(self.device.type):
+                # 3. Forward Pass & Loss (Policy handles all ODE matching internally!)
+                loss = self.policy.compute_loss(batch)
 
-            # 4. Backward Pass
-            self.optimizer.zero_grad()
-            loss.backward()
+            # 4. Update the loss for grad scaler
+            self.grad_scaler.scale(
+                loss / self.config.gradient_accumulation_steps
+            ).backward()
 
-            # Optional: Gradient clipping is highly recommended for Flow Matching
-            torch.nn.utils.clip_grad_norm_(self.policy.parameters(), 1.0)
+            # If it is time for gradient accumulation
+            if (self.global_step + 1) % self.config.gradient_accumulation_steps == 0:
+                # 5. Backward Pass
+                self.grad_scaler.unscale_(self.optimizer)
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    self.policy.parameters(), 1.0
+                )
+                self.grad_scaler.step(self.optimizer)
 
-            self.optimizer.step()
-            self.scheduler.step()
+                self.grad_scaler.update()
+                self.scheduler.step()
+                self.ema.update()
 
-            # 5. Update EMA shadow weights
-            self.ema.update()
+                self.optimizer.zero_grad()
 
-            # 6. Logging
-            if self.global_step % 10 == 0:
                 self.logger.log_scalars(
                     {
                         "train/loss": loss.item(),
                         "train/lr": self.optimizer.param_groups[0]["lr"],
+                        "train/grad_norm": grad_norm.item(),
                     },
                     step=self.global_step,
                 )

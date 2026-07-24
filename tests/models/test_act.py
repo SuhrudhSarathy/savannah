@@ -1,7 +1,7 @@
 # tests/test_act_policy.py
 import pytest
 import torch
-from savannah.models.vision_encoder import VisionEncoder
+from savannah.models.encoders import VisionEncoder
 
 from savannah.models.act import (
     ACT_CVAE_Decoder,

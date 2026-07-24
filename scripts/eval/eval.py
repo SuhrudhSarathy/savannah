@@ -1,5 +1,4 @@
 import sys
-from collections import deque
 
 try:
     import imp
@@ -17,7 +16,7 @@ from savannah.factory import build_policy, build_task
 from savannah.tasks import RecordedEnv
 from savannah.utils.checkpoint import resolve_checkpoint_path
 from savannah.utils.device import get_device
-from savannah.utils.eval_and_log import ActionBuffer
+from savannah.utils.evaluation import EpisodeResult, run_rollout
 from savannah.utils.log import logger, setup_logging
 from savannah.utils.logger import ExperimentLogger
 
@@ -42,62 +41,55 @@ def main(cfg: DictConfig) -> None:
     checkpoint = torch.load(checkpoint_path, map_location=device)
     state_key = "ema_state_dict" if cfg.use_ema else "model_state_dict"
     policy.load_state_dict(checkpoint[state_key])
-    policy.eval()
-
-    obs_horizon = cfg.task.config.obs_horizon
 
     base_env = task.get_env(render_mode="rgb_array")
     env = RecordedEnv(base_env, video_folder=cfg.video_folder, name_prefix="eval")
 
-    successes = 0
-    for ep in range(cfg.num_episodes):
-        raw_obs, _ = task.reset_env(
-            env, pick_color=cfg.pick_color, place_color=cfg.place_color
-        )
-        obs_history = deque([raw_obs] * obs_horizon, maxlen=obs_horizon)
-        action_buffer = ActionBuffer(execute_steps=cfg.execute_steps)
-        done = False
-
+    def on_episode_start(ep: int) -> None:
         logger.info("── Episode {}/{} ──", ep + 1, cfg.num_episodes)
 
-        while not done:
-            if action_buffer.is_empty():
-                obs_dict = task.preprocess_observation_history(obs_history)
-                with torch.no_grad():
-                    policy_out = policy.compute_action(obs_dict)
+    def on_chunk(actions: torch.Tensor) -> None:
+        # Drives the action-chunk overlay drawn into the recorded video.
+        env.set_chunk(task.postprocess_chunk(actions))
 
-                viz_chunk = task.postprocess_chunk(policy_out.actions)
-                env.set_chunk(viz_chunk)
-                action_buffer.push(policy_out.actions[0])
+    def on_step(ep, raw_action, action_to_apply, info, terminated, truncated) -> None:
+        logger.debug("raw_action={}, action_to_apply={}", raw_action, action_to_apply)
+        logger.info(
+            "Success={}, coverage={}, terminated={}, truncated={}",
+            info["is_success"],
+            info["coverage"],
+            terminated,
+            truncated,
+        )
 
-            raw_action = torch.clamp(action_buffer.pop(), -1, 1)
-            action_to_apply = task.postprocess_action(raw_action)
-            logger.debug(
-                "raw_action={}, action_to_apply={}", raw_action, action_to_apply
-            )
-
-            raw_obs, _, terminated, truncated, info = env.step(action_to_apply)
-            obs_history.append(raw_obs)
-            done = terminated or truncated or task.is_success(info)
-
-            logger.info(
-                "Success={}, coverage={}, terminated={}, truncated={}",
-                info["is_success"],
-                info["coverage"],
-                terminated,
-                truncated,
-            )
-
-        success = task.is_success(info)
-        successes += int(success)
-        if success:
+    def on_episode_end(ep: int, result: EpisodeResult) -> None:
+        if result.success:
             logger.success(
-                "Episode {} SUCCESS. Metrics: {}", ep, task.get_metrics(info)
+                "Episode {} SUCCESS. Metrics: {}", ep, task.get_metrics(result.info)
             )
         else:
-            logger.warning("Episode {} FAIL. Metrics: {}", ep, task.get_metrics(info))
+            logger.warning(
+                "Episode {} FAIL. Metrics: {}", ep, task.get_metrics(result.info)
+            )
+
+    result = run_rollout(
+        policy=policy,
+        task=task,
+        env=env,
+        num_episodes=cfg.num_episodes,
+        execute_steps=cfg.execute_steps,
+        obs_horizon=cfg.task.config.obs_horizon,
+        capture_frames=False,  # RecordedEnv records video on its own
+        reset_kwargs={"pick_color": cfg.pick_color, "place_color": cfg.place_color},
+        on_episode_start=on_episode_start,
+        on_chunk=on_chunk,
+        on_step=on_step,
+        on_episode_end=on_episode_end,
+    )
 
     env.close()
+
+    successes = round(result.success_rate * cfg.num_episodes)
     logger.info("Success rate: {}/{}", successes, cfg.num_episodes)
 
     exp_logger.finish()

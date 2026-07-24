@@ -31,6 +31,10 @@ class _TinyBackbone(VisionFeatureExtractor):
     def out_channels(self) -> int:
         return self._out_channels
 
+    @property
+    def tokens_per_image(self) -> int:
+        return 1
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x).flatten(1)  # (B, out_channels)
 
