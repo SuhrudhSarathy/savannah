@@ -19,7 +19,7 @@ vision_encoder:
   embed_dim: ${model.embed_dim}
   backbone:
     _target_: savannah.models.backbones.lora_resnet_backbone.LoRAResNetBackbone
-    out_channels: 512
+    out_channels: 128
     image_size: ${task.config.image_size}
     lora_rank: 20
     lora_alpha: 40

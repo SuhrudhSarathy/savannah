@@ -9,6 +9,6 @@ config:
   image_size: 96
   batch_size: 32
   num_workers: 4
-  train_fraction: 0.95
+  train_fraction: 0.90
   cache_in_memory: false
   augmentation: ${augmentation}

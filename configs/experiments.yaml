@@ -4,10 +4,10 @@
 vram_per_run_gb: 10
 
 experiments:
-  # - name: dit_adaln_pusht
-  #   overrides:
-  #     - model=dit_adaln
-  #     - trainer.checkpoint.checkpoint_dir=checkpoints/dit_adaln
+  - name: dit_adaln_pusht
+    overrides:
+      - model=dit_adaln
+      - name=dit_adaln_pusht
   # - name: dit_adaln_flow_matching_pusht
   #   overrides:
   #     - model=dit_adaln_flow_matching
@@ -16,16 +16,22 @@ experiments:
   - name: dit_cross_pusht
     overrides:
       - model=dit_cross_attn
-      - trainer.checkpoint.checkpoint_dir=checkpoints/dit_cross_attn
-  - name: dit_cross_attn_flow_matching_pusht
-    overrides:
-      - model=dit_cross_attn_flow_matching
-      - trainer.checkpoint.checkpoint_dir=checkpoints/dit_cross_attn_flow_matching
+      - name=dit_cross_attn_pusht
 
-  # - name: unet_pusht_ddim
+  - name: dit_lora_ddim
+    overrides:
+      - model=dit_lora_ddim
+      - name=dit_lora_ddim_pusht
+
+  # - name: dit_cross_attn_flow_matching_pusht
   #   overrides:
-  #     - model=unet
-  #     - trainer.checkpoint.checkpoint_dir=checkpoints/unet_pusht_ddim
+  #     - model=dit_cross_attn_flow_matching
+  #     - trainer.checkpoint.checkpoint_dir=checkpoints/dit_cross_attn_flow_matching
+
+  - name: unet_pusht_ddim
+    overrides:
+      - model=unet
+      - name=unet_pusht
 
   # - name: unet_pusht_flow_matching
   #   overrides:

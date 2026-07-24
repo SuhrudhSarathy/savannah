@@ -1,12 +1,12 @@
 _target_: savannah.models.dit.DiTPolicy
-embed_dim: 64
+embed_dim: 128
 encoder_num_blocks: 4
 encoder_num_attn_heads: 4
-encoder_feedforward_dim: 256
+encoder_feedforward_dim: 512
 encoder_dropout: 0.1
 decoder_num_blocks: 4
 decoder_num_attn_heads: 4
-decoder_feedforward_dim: 256
+decoder_feedforward_dim: 512
 decoder_dropout: 0.1
 state_dim: 2
 action_dim: 2
@@ -24,6 +24,6 @@ vision_encoder:
   embed_dim: ${model.embed_dim}
   backbone:
     _target_: savannah.models.backbones.lora_resnet_backbone.LoRAResNetBackbone
-    out_channels: 96
+    out_channels: 128
     use_spatial_softmax: false
 language_encoder: null
