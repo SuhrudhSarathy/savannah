@@ -15,5 +15,5 @@ eval:
   eval_execute_steps: 8
 
 checkpoint:
-  checkpoint_dir: checkpoints/dit_adaln_pusht
-  artifact_name: dit_adaln_pusht
+  checkpoint_dir: checkpoints/${name}
+  artifact_name: ${name}

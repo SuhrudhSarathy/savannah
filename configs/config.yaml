@@ -5,9 +5,11 @@ defaults:
   - augmentation: default
   - _self_
 
+name: dit_adaln_pusht
+
 wandb:
   project: savannah
-  run_name: adaln_pusht
+  run_name: ${name}
   enable_logging: true
   enable_model_checkpoint: false # upload best/best_success/latest checkpoints as W&B artifacts
 
