@@ -1,12 +1,19 @@
-lr: 2e-5
-training_steps: 100000
-warmup_steps: 2000
-eval_freq: 5000
-eval_using_sim: true
-sim_eval_freq: 5000
-eval_episodes: 1
-eval_execute_steps: 8
-ema_decay: 0.9999
-checkpoint_dir: checkpoints/dit_adaln_pusht
-artifact_name: dit_adaln_pusht
-gradient_accumulation_steps: 4
+train:
+  lr: 2e-5
+  vision_lr: null
+  training_steps: 100000
+  warmup_steps: 2000
+  schedule: cosine
+  gradient_accumulation_steps: 4
+  ema_decay: 0.9999
+
+eval:
+  eval_freq: 5000
+  eval_using_sim: true
+  sim_eval_freq: 5000
+  eval_episodes: 1
+  eval_execute_steps: 8
+
+checkpoint:
+  checkpoint_dir: checkpoints/dit_adaln_pusht
+  artifact_name: dit_adaln_pusht

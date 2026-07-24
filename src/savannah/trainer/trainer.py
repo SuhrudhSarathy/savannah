@@ -1,6 +1,6 @@
 import os
 import signal
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
 from hydra.core.config_store import ConfigStore
@@ -18,19 +18,36 @@ from savannah.utils.logger import ExperimentLogger
 
 
 @dataclass
-class TrainConfig:
+class TrainParams:
     lr: float = 2e-4
+    vision_lr: float | None = None
     training_steps: int = 100_000
     warmup_steps: int = 1000
+    schedule: str = "cosine"
+    gradient_accumulation_steps: int = 4
+    ema_decay: float = 0.9999
+
+
+@dataclass
+class EvalParams:
     eval_freq: int = 5000
     eval_using_sim: bool = False
     sim_eval_freq: int = 5000
     eval_episodes: int = 5
     eval_execute_steps: int = 8
-    ema_decay: float = 0.9999
+
+
+@dataclass
+class CheckpointParams:
     checkpoint_dir: str = "checkpoints"
     artifact_name: str = "model"
-    gradient_accumulation_steps: int = 4
+
+
+@dataclass
+class TrainConfig:
+    train: TrainParams = field(default_factory=TrainParams)
+    eval: EvalParams = field(default_factory=EvalParams)
+    checkpoint: CheckpointParams = field(default_factory=CheckpointParams)
 
 
 cs = ConfigStore.instance()
@@ -53,21 +70,39 @@ class PolicyTrainer:
         self.device = device
 
         # Setup Optimizer
+        vision_params = []
+        other_params = []
+        for name, p in self.policy.named_parameters():
+            if not p.requires_grad:
+                continue
+            if name.startswith("vision_encoder."):
+                vision_params.append(p)
+            else:
+                other_params.append(p)
+
+        vision_lr = (
+            self.config.train.vision_lr
+            if self.config.train.vision_lr is not None
+            else self.config.train.lr
+        )
         self.optimizer = AdamW(
-            [p for p in self.policy.parameters() if p.requires_grad],
-            lr=self.config.lr,
+            [
+                {"params": other_params, "lr": self.config.train.lr},
+                {"params": vision_params, "lr": vision_lr},
+            ],
             weight_decay=1e-4,
         )
 
         # Setup Scheduler
         self.scheduler = get_custom_scheduler(
             self.optimizer,
-            num_warmup_steps=self.config.warmup_steps,
-            num_training_steps=self.config.training_steps,
+            num_warmup_steps=self.config.train.warmup_steps,
+            num_training_steps=self.config.train.training_steps,
+            schedule=self.config.train.schedule,
         )
 
         # Setup EMA
-        self.ema = EMA(self.policy, decay=self.config.ema_decay)
+        self.ema = EMA(self.policy, decay=self.config.train.ema_decay)
 
         # Tracking
         self.global_step = 0
@@ -77,7 +112,7 @@ class PolicyTrainer:
         # Setup Gradscaler
         self.grad_scaler = GradScaler(self.device.type)
 
-        os.makedirs(self.config.checkpoint_dir, exist_ok=True)
+        os.makedirs(self.config.checkpoint.checkpoint_dir, exist_ok=True)
 
     def save_checkpoint(self, name: str, success_rate: float):
         """Saves both the training weights and the EMA shadow weights."""
@@ -89,11 +124,11 @@ class PolicyTrainer:
             "global_step": self.global_step,
             "success_rate": success_rate,
         }
-        path = os.path.join(self.config.checkpoint_dir, f"{name}.ckpt")
+        path = os.path.join(self.config.checkpoint.checkpoint_dir, f"{name}.ckpt")
         torch.save(checkpoint, path)
 
     def train(self):
-        logger.info("Starting training for {} steps…", self.config.training_steps)
+        logger.info("Starting training for {} steps…", self.config.train.training_steps)
 
         train_loader = self.task.get_train_loader()
         train_iter = iter(train_loader)
@@ -111,9 +146,9 @@ class PolicyTrainer:
         signal.signal(signal.SIGINT, _sigint_handler)
 
         # Use a flat tqdm loop based on steps, rather than epochs
-        pbar = tqdm(total=self.config.training_steps, desc="Training")
+        pbar = tqdm(total=self.config.train.training_steps, desc="Training")
 
-        while self.global_step < self.config.training_steps:
+        while self.global_step < self.config.train.training_steps:
             self.policy.train()
 
             # 1. Fetch next batch (cycle loader if empty)
@@ -132,11 +167,13 @@ class PolicyTrainer:
 
             # 4. Update the loss for grad scaler
             self.grad_scaler.scale(
-                loss / self.config.gradient_accumulation_steps
+                loss / self.config.train.gradient_accumulation_steps
             ).backward()
 
             # If it is time for gradient accumulation
-            if (self.global_step + 1) % self.config.gradient_accumulation_steps == 0:
+            if (
+                self.global_step + 1
+            ) % self.config.train.gradient_accumulation_steps == 0:
                 # 5. Backward Pass
                 self.grad_scaler.unscale_(self.optimizer)
                 grad_norm = torch.nn.utils.clip_grad_norm_(
@@ -154,13 +191,17 @@ class PolicyTrainer:
                     {
                         "train/loss": loss.item(),
                         "train/lr": self.optimizer.param_groups[0]["lr"],
+                        "train/vision_lr": self.optimizer.param_groups[1]["lr"],
                         "train/grad_norm": grad_norm.item(),
                     },
                     step=self.global_step,
                 )
 
             # 7. Evaluation & Checkpointing
-            if self.global_step > 0 and self.global_step % self.config.eval_freq == 0:
+            if (
+                self.global_step > 0
+                and self.global_step % self.config.eval.eval_freq == 0
+            ):
                 logger.info("── Validating at step {} ──", self.global_step)
                 val_losses = []
                 with torch.no_grad():
@@ -185,9 +226,9 @@ class PolicyTrainer:
             # 8. Live sim eval & video upload (own cadence — typically much rarer
             # than the val-loss check above, since it rolls out full episodes)
             if (
-                self.config.eval_using_sim
+                self.config.eval.eval_using_sim
                 and self.global_step > 0
-                and self.global_step % self.config.sim_eval_freq == 0
+                and self.global_step % self.config.eval.sim_eval_freq == 0
             ):
                 logger.info("── Live sim eval at step {} ──", self.global_step)
                 self.ema.shadow.eval()
@@ -196,8 +237,8 @@ class PolicyTrainer:
                     task=self.task,
                     logger=self.logger,
                     step=self.global_step,
-                    num_episodes=self.config.eval_episodes,
-                    execute_steps=self.config.eval_execute_steps,
+                    num_episodes=self.config.eval.eval_episodes,
+                    execute_steps=self.config.eval.eval_execute_steps,
                 )
 
                 self.logger.log_scalars(
@@ -228,11 +269,13 @@ class PolicyTrainer:
 
         if self.logger.enable_model_checkpoint:
             for ckpt_name, alias in checkpoint_aliases.items():
-                local_path = os.path.join(self.config.checkpoint_dir, ckpt_name)
+                local_path = os.path.join(
+                    self.config.checkpoint.checkpoint_dir, ckpt_name
+                )
                 if os.path.exists(local_path):
                     self.logger.log_model_artifact(
                         model_path=local_path,
-                        artifact_name=self.config.artifact_name,
+                        artifact_name=self.config.checkpoint.artifact_name,
                         aliases=[alias],
                     )
         else:

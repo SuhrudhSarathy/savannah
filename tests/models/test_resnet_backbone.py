@@ -101,3 +101,25 @@ def test_backbone_is_resnet18(backbone):
     # Feature extractor should be a 6-stage Sequential (conv1..layer4)
     # resnet18 children minus avgpool and fc = 8 children
     assert len(list(backbone.backbone.children())) == 8
+
+
+def test_full_grid_when_spatial_softmax_disabled():
+    # 64x64 input -> ResNet18 downsamples by 32 -> 2x2 = 4 tokens
+    backbone = ResNetBackbone(
+        out_channels=OUT_CHANNELS, image_size=H, use_spatial_softmax=False
+    )
+    x = torch.randn(B, 3, H, W)
+    out = backbone(x)
+    assert backbone.tokens_per_image == 4
+    assert out.shape == (B, 4, OUT_CHANNELS)
+
+
+def test_full_grid_gradient_flows():
+    backbone = ResNetBackbone(
+        out_channels=OUT_CHANNELS, image_size=H, use_spatial_softmax=False
+    )
+    backbone.train()
+    x = torch.randn(B, 3, H, W)
+    backbone(x).pow(2).mean().backward()
+    assert backbone.repoj.weight.grad is not None
+    assert backbone.repoj.weight.grad.abs().sum() > 0

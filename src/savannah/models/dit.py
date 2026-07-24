@@ -235,7 +235,7 @@ class DiTPolicy(Policy):
 
         # MultiChoice Attention computation
         self.multi_choice_attn = MultiChoiceAttention(encoder_num_blocks)
-        self.register_buffer("mask", torch.zeros(3, 3))
+        self.mask = None
 
         # Action reprojection
         self.action_reprojection = nn.Linear(self.embed_dim, self._action_dim)
@@ -329,7 +329,7 @@ class DiTPolicy(Policy):
             False,
             dtype=torch.bool,
             device=x_dec_tokens.device,
-        )
+        ).to(x_state.device)
         self.mask[:n_cond, :n_cond] = True
         self.mask[n_cond:, :n_cond] = True
         self.mask[n_cond:, n_cond:] = True

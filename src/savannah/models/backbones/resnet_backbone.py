@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
+from einops import rearrange
 
 from savannah.models.backbones import VisionFeatureExtractor
 
@@ -31,18 +32,32 @@ class SpatialSoftmax(nn.Module):
 
 
 class ResNetBackbone(VisionFeatureExtractor):
-    def __init__(self, out_channels: int):
+    def __init__(
+        self,
+        out_channels: int,
+        image_size: int = 128,
+        use_spatial_softmax: bool = True,
+    ):
         super().__init__()
         self._out_channels = out_channels
+        self.use_spatial_softmax = use_spatial_softmax
         resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
 
         self.backbone = nn.Sequential(*list(resnet.children())[:-2])
-        self.spatial_softmax = SpatialSoftmax()
-        self.repoj = nn.Linear(2 * 512, out_channels)
+        self.replace_bn_with_gn(self.backbone)
 
-        self.module = nn.Sequential(self.backbone, self.spatial_softmax, self.repoj)
+        if use_spatial_softmax:
+            self.spatial_softmax = SpatialSoftmax()
+            self._tokens_per_image = 1
+            proj_in = 2 * 512
+        else:
+            # ResNet18 downsamples spatially by 32x (5 pooling/stride-2 ops).
+            # tokens_per_image = (H // 32) * (W // 32) for a square input.
+            spatial = image_size // 32
+            self._tokens_per_image = spatial * spatial
+            proj_in = 512
 
-        self.replace_bn_with_gn(self.module)
+        self.repoj = nn.Linear(proj_in, out_channels)
 
     @property
     def out_channels(self) -> int:
@@ -50,10 +65,15 @@ class ResNetBackbone(VisionFeatureExtractor):
 
     @property
     def tokens_per_image(self) -> int:
-        return 1
+        return self._tokens_per_image
 
     def forward(self, x):
-        return self.module(x)
+        features = self.backbone(x)  # (B, 512, H, W)
+        if self.use_spatial_softmax:
+            features = self.spatial_softmax(features)  # (B, 1024)
+        else:
+            features = rearrange(features, "b c h w -> b (h w) c")
+        return self.repoj(features)
 
     def replace_bn_with_gn(self, model, num_groups=32):
         for name, module in model.named_children():

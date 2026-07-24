@@ -127,6 +127,27 @@ def test_all_convs_including_downsample_shortcuts_are_lora_wrapped(backbone):
         assert m.lora_B.weight.requires_grad
 
 
+def test_pooled_when_spatial_softmax_enabled():
+    backbone = LoRAResNetBackbone(
+        out_channels=OUT_CHANNELS, image_size=H, use_spatial_softmax=True
+    )
+    x = torch.randn(B, 3, H, W)
+    out = backbone(x)
+    assert backbone.tokens_per_image == 1
+    assert out.shape == (B, OUT_CHANNELS)
+
+
+def test_pooled_gradient_flows_into_channel_proj():
+    backbone = LoRAResNetBackbone(
+        out_channels=OUT_CHANNELS, image_size=H, use_spatial_softmax=True
+    )
+    backbone.train()
+    x = torch.randn(B, 3, H, W)
+    backbone(x).pow(2).mean().backward()
+    assert backbone.channel_proj.weight.grad is not None
+    assert backbone.channel_proj.weight.grad.abs().sum() > 0
+
+
 def test_merge_unmerge_round_trip(backbone):
     backbone.eval()
     # lora_B is zero-initialized, so give it nonzero weights first --

@@ -5,6 +5,7 @@ import torch.nn as nn
 import torchvision.models as models
 
 from savannah.models.backbones import VisionFeatureExtractor
+from savannah.models.backbones.resnet_backbone import SpatialSoftmax
 from einops import rearrange
 
 
@@ -76,13 +77,11 @@ class LoRAResNetBackbone(VisionFeatureExtractor):
         image_size: int = 128,
         lora_rank: int = 20,
         lora_alpha: int = 40,
+        use_spatial_softmax: bool = False,
     ):
         super().__init__()
         self._out_channels = out_channels
-        # ResNet18 downsamples spatially by 32x (5 pooling/stride-2 ops).
-        # tokens_per_image = (H // 32) * (W // 32) for a square input.
-        spatial = image_size // 32
-        self._tokens_per_image = spatial * spatial
+        self.use_spatial_softmax = use_spatial_softmax
 
         self.lora_rank = lora_rank
         self.lora_alpha = lora_alpha
@@ -93,8 +92,19 @@ class LoRAResNetBackbone(VisionFeatureExtractor):
         self.replace_bn_with_gn(self.backbone)
         self.add_lora(self.backbone)
 
-        if out_channels != 512:
-            self.channel_proj = nn.Linear(512, out_channels)
+        if use_spatial_softmax:
+            self.spatial_softmax = SpatialSoftmax()
+            self._tokens_per_image = 1
+            proj_in = 2 * 512
+        else:
+            # ResNet18 downsamples spatially by 32x (5 pooling/stride-2 ops).
+            # tokens_per_image = (H // 32) * (W // 32) for a square input.
+            spatial = image_size // 32
+            self._tokens_per_image = spatial * spatial
+            proj_in = 512
+
+        if out_channels != proj_in:
+            self.channel_proj = nn.Linear(proj_in, out_channels)
         else:
             self.channel_proj = nn.Identity()
 
@@ -108,7 +118,10 @@ class LoRAResNetBackbone(VisionFeatureExtractor):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_out = self.backbone(x)  # (B, C, H, W)
-        x_out = rearrange(x_out, "b c h w -> b (h w) c")
+        if self.use_spatial_softmax:
+            x_out = self.spatial_softmax(x_out)  # (B, 2*C)
+        else:
+            x_out = rearrange(x_out, "b c h w -> b (h w) c")
         return self.channel_proj(x_out)
 
     def add_lora(self, model):
