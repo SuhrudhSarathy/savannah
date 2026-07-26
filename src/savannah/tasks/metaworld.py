@@ -3,7 +3,6 @@ from collections import deque
 import cv2
 import gymnasium as gym
 import metaworld  # noqa: F401  (registers Meta-World/MT1 with gymnasium)
-import mujoco
 import numpy as np
 import torch
 from gymnasium import ObservationWrapper
@@ -11,7 +10,14 @@ from gymnasium.spaces import Box
 from gymnasium.spaces import Dict as GymDict
 
 from savannah.tasks import BaseRobotTask
+from savannah.utils.device import configure_mujoco_gl
 from savannah.utils.observation import ObservationKey
+
+# Must run before `import mujoco` — the GL backend is picked from MUJOCO_GL
+# at import time (see configure_mujoco_gl's docstring).
+configure_mujoco_gl()
+
+import mujoco  # noqa: E402
 
 # We only need the current ee position and the gripper state
 STATE_KEEP_INDICES = [0, 1, 2, 3]
