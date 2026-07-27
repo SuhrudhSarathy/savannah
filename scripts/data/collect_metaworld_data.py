@@ -1,5 +1,10 @@
 #!/usr/bin/env python
-"""Collect MetaWorld expert demonstrations and push them as a LeRobot dataset."""
+"""Collect MetaWorld expert demonstrations and push them as a LeRobot dataset.
+
+Works for both standard MT1 tasks (e.g. assembly-v3) and MTN multi-instance
+tasks (e.g. hammer-multi-nail-v3) — the benchmark class is picked
+automatically based on `metaworld.env_dict.MULTI_INSTANCE_V3_ENVIRONMENTS`.
+"""
 
 from __future__ import annotations
 
@@ -12,9 +17,25 @@ import metaworld
 import metaworld.policies as mw_policies
 import numpy as np
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from metaworld.env_dict import MULTI_INSTANCE_V3_ENVIRONMENTS
 from tqdm import tqdm
 
 from savannah.tasks.metaworld import STATE_KEEP_INDICES, MultiCameraObsWrapper
+
+# Extra per-step `info` fields (currently from hammer-multi-nail-v3 and other
+# MTN envs) that can optionally be stored as dataset features via
+# --info-fields. Only meaningful for tasks whose `info` dict has these keys.
+INFO_FIELD_SPECS = {
+    "near_object": {"dtype": "float32", "shape": (1,)},
+    "grasp_success": {"dtype": "bool", "shape": (1,)},
+    "grasp_reward": {"dtype": "float32", "shape": (1,)},
+    "in_place_reward": {"dtype": "float32", "shape": (1,)},
+    "unscaled_reward": {"dtype": "float32", "shape": (1,)},
+    "nail_positions": {"dtype": "float32", "shape": (3, 3)},
+    "nails_hit": {"dtype": "bool", "shape": (3,)},
+    "num_nails_hit": {"dtype": "int64", "shape": (1,)},
+    "hammer_dropped_off": {"dtype": "bool", "shape": (1,)},
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -60,10 +81,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--private", action="store_true", default=False)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--info-fields",
+        nargs="+",
+        default=[],
+        choices=sorted(INFO_FIELD_SPECS.keys()),
+        help="Extra per-step info fields (e.g. nail_positions, nails_hit) to store alongside each frame.",
+    )
     return parser.parse_args()
 
 
-def build_features(cameras: list[str], image_size: int) -> dict:
+def build_features(cameras: list[str], image_size: int, info_fields: list[str]) -> dict:
     H = W = image_size
     features = {
         "observation.state": {
@@ -83,7 +111,15 @@ def build_features(cameras: list[str], image_size: int) -> dict:
             "shape": (H, W, 3),
             "names": ["height", "width", "channel"],
         }
+    for name in info_fields:
+        spec = INFO_FIELD_SPECS[name]
+        features[name] = {"dtype": spec["dtype"], "shape": spec["shape"], "names": None}
     return features
+
+
+def _extract_info_field(name: str, info: dict) -> np.ndarray:
+    spec = INFO_FIELD_SPECS[name]
+    return np.asarray(info[name], dtype=spec["dtype"]).reshape(spec["shape"])
 
 
 def make_env(
@@ -92,26 +128,30 @@ def make_env(
     cameras: list[str],
     image_size: int,
 ) -> tuple:
-    mt1 = metaworld.MT1(task_name, seed=seed)
-    raw_env = mt1.train_classes[task_name](render_mode="rgb_array")
+    benchmark_cls = (
+        metaworld.MTN if task_name in MULTI_INSTANCE_V3_ENVIRONMENTS else metaworld.MT1
+    )
+    benchmark = benchmark_cls(task_name, seed=seed)
+    raw_env = benchmark.train_classes[task_name](render_mode="rgb_array")
     raw_env._freeze_rand_vec = False
     wrapped = MultiCameraObsWrapper(
         raw_env, camera_names=cameras, img_size=(image_size, image_size)
     )
-    return wrapped, raw_env, mt1
+    return wrapped, raw_env, benchmark
 
 
 def collect_episode(
     wrapped_env,
     raw_env,
-    mt1,
+    benchmark,
     expert_policy,
     task_name: str,
     cameras: list[str],
+    info_fields: list[str],
     max_steps: int = 500,
 ) -> tuple[list[dict], bool]:
-    task_idx = np.random.randint(len(mt1.train_tasks))
-    raw_env.set_task(mt1.train_tasks[task_idx])
+    task_idx = np.random.randint(len(benchmark.train_tasks))
+    raw_env.set_task(benchmark.train_tasks[task_idx])
     obs_dict, _ = wrapped_env.reset()
 
     task_str = f"metaworld {task_name} expert demonstration"
@@ -132,11 +172,16 @@ def collect_episode(
         for cam in cameras:
             frame[f"observation.images.{cam}"] = obs_dict[cam]
 
-        frames.append(frame)
-
         obs_dict, _, terminated, truncated, info = wrapped_env.step(action)
 
-        if info.get("success", 0) >= 0.5:
+        # info reflects the outcome of `action` taken from this frame's
+        # observation, so it's attached here rather than at the next frame.
+        for name in info_fields:
+            frame[name] = _extract_info_field(name, info)
+
+        frames.append(frame)
+
+        if info.get("success", False):
             success = True
             break
         if truncated or terminated:
@@ -172,8 +217,8 @@ def main() -> None:
         available = sorted(mw_policies.ENV_POLICY_MAP.keys())
         raise ValueError(f"No expert policy for '{args.task}'. Available: {available}")
 
-    expert = mw_policies.ENV_POLICY_MAP[args.task]()
-    features = build_features(args.cameras, args.image_size)
+    expert_cls = mw_policies.ENV_POLICY_MAP[args.task]
+    features = build_features(args.cameras, args.image_size, args.info_fields)
 
     dataset = LeRobotDataset.create(
         repo_id=args.repo_id,
@@ -182,7 +227,7 @@ def main() -> None:
         robot_type="sawyer",
     )
 
-    wrapped_env, raw_env, mt1 = make_env(
+    wrapped_env, raw_env, benchmark = make_env(
         args.task, args.seed, args.cameras, args.image_size
     )
 
@@ -195,8 +240,19 @@ def main() -> None:
     try:
         while successes < args.num_episodes and attempts < max_attempts:
             attempts += 1
+            # Fresh policy instance per attempt: some expert policies (e.g.
+            # hammer-multi-nail-v3's) are stateful across get_action() calls
+            # and have no reset(), so reusing one across episodes would leak
+            # state-machine progress from a prior attempt into this one.
+            expert = expert_cls()
             frames, success = collect_episode(
-                wrapped_env, raw_env, mt1, expert, args.task, args.cameras
+                wrapped_env,
+                raw_env,
+                benchmark,
+                expert,
+                args.task,
+                args.cameras,
+                args.info_fields,
             )
 
             if success or args.keep_failed:

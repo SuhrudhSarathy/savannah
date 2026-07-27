@@ -1372,18 +1372,14 @@ wheels = [
 
 [[package]]
 name = "metaworld"
-version = "3.0.0"
-source = { registry = "https://pypi.org/simple" }
+version = "3.1.1"
+source = { git = "https://github.com/SuhrudhSarathy/Metaworld.git?rev=dev%2Fmulti-env#68e57dd9a33ece91dad8df6cb07451143893413c" }
 dependencies = [
     { name = "gymnasium" },
     { name = "imageio" },
     { name = "mujoco" },
     { name = "numpy" },
     { name = "scipy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/8e/ea/ee112af5a58de09a1fdf33e8ba11cd38327c9b7a11049325a62055a66e37/metaworld-3.0.0.tar.gz", hash = "sha256:5f30950a5c71e4054c3d6d0293da13eddda9806a43f85cf576cf9632efd2cc87", size = 36452617, upload-time = "2025-06-14T01:44:35.873Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/29/e1/c758357e82c2deb2401a7214fbfbc6ddf09b5453371dee1b7a2da0aab274/metaworld-3.0.0-py3-none-any.whl", hash = "sha256:f1dd9f8a1bcceab34a5f3c20113724dd90d21984ae89df98c21c842eb3ece137", size = 36660341, upload-time = "2025-06-14T01:44:32.171Z" },
 ]
 
 [[package]]
@@ -1428,7 +1424,7 @@ wheels = [
 
 [[package]]
 name = "mujoco"
-version = "3.6.0"
+version = "3.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "absl-py" },
@@ -1437,13 +1433,13 @@ dependencies = [
     { name = "numpy" },
     { name = "pyopengl" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/42/82/f8f08dfe9123df4351b560f894f0e7166c1a45a0dd2f04145ed00b8f849b/mujoco-3.6.0.tar.gz", hash = "sha256:15c89f423e33bce0860ad7061763b72323426d6348d7b2e46ebdcc37b11e0905", size = 915041, upload-time = "2026-03-11T01:45:42.807Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8a/c6/76716fd205ccd0afbaef8b355555ace70347bd02c921d14e05e68eab3dbb/mujoco-3.3.0.tar.gz", hash = "sha256:0fb12ab715bc2b6d2394a6330b8c3a1dd95b0f3ba812bfe4f6c91e0a1ca3ad0f", size = 801447, upload-time = "2025-02-27T19:16:18.748Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/38/c4/f8959e3d5d98b282e081ce08d07cd71ae949cc0ad9f2c39c0a69fcb88c8c/mujoco-3.6.0-cp312-cp312-macosx_10_16_x86_64.whl", hash = "sha256:e7e60ee4c07f6fecd63c23e6f47b8d7cdacad75d311739d50d50b5107a630af2", size = 7159624, upload-time = "2026-03-11T01:45:16.893Z" },
-    { url = "https://files.pythonhosted.org/packages/26/55/7407eced2c44fbea233302d2c11e778852ea0f2eb0e14610f13a7e0d6ac7/mujoco-3.6.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:ea71750f8cbe24b02a091093592f08fb71c95692b43c25e87dabe496ace0bb55", size = 7093719, upload-time = "2026-03-11T01:45:19.191Z" },
-    { url = "https://files.pythonhosted.org/packages/2c/cc/2aae89c3a83fed29ccb9057c05fb4a218b2a42c6dea136d9a78fea6b39f8/mujoco-3.6.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:094de585a2084508f1cfd76170b0dfe1d9c122b3bd4677e96ef2383100c9032f", size = 6982824, upload-time = "2026-03-11T01:45:22.078Z" },
-    { url = "https://files.pythonhosted.org/packages/52/6c/5ec4e93676a65064a6591176772e00cfa02716156a1d0a7d646a8203348f/mujoco-3.6.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:8714fab312c7ee58f45bda7ef8762da2184e3a6a1d780a5093e93a160d66bd3d", size = 7473873, upload-time = "2026-03-11T01:45:24.671Z" },
-    { url = "https://files.pythonhosted.org/packages/92/22/38d82f0c34213af53afbbb248b3442943ef48ffbac1e4c909b321e02ac56/mujoco-3.6.0-cp312-cp312-win_amd64.whl", hash = "sha256:3d4ec53e4e20fcc85843d607fa1648e0b12d2d2de81ee6f85926e95a7e84e8d8", size = 5764289, upload-time = "2026-03-11T01:45:27.014Z" },
+    { url = "https://files.pythonhosted.org/packages/11/6f/218bf9c8480340d640d4f8e09c0295bfd02cc08610bd6798fad12ebc9cc0/mujoco-3.3.0-cp312-cp312-macosx_10_16_x86_64.whl", hash = "sha256:32a7671069799e69f51bf515f6f97d8b2c852a0de065129033347e616fe4e9ed", size = 6588848, upload-time = "2025-02-27T19:15:22.124Z" },
+    { url = "https://files.pythonhosted.org/packages/42/3b/f17690dee3f3f3771e9953ffe634d0a1649af44c609c8b201325b9a7fbe6/mujoco-3.3.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:2f435f34ea8c41711e68c635ada89c7347e9d53a330c2ff748723a96495d8710", size = 6493393, upload-time = "2025-02-27T19:15:26.398Z" },
+    { url = "https://files.pythonhosted.org/packages/db/d5/89feffffdc085a6e3a31eea46a86efdd5a4d3421dacfba742f75e3df3319/mujoco-3.3.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f526587b05879842e7380feda0a207455e78cdc05c8672c77d292383c145ab7e", size = 6283111, upload-time = "2025-02-27T19:15:30.509Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/7b/dfedcfd4a8db4d861747e34e47d96dbcbb994db47b6bd626ed3f25935b81/mujoco-3.3.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:607df8af9e01831d624fc5ffcb6376899fb47c1e999a0e38b8388622da712f64", size = 6639670, upload-time = "2025-02-27T19:15:33.889Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/e2/7865204cbe00a2c319bf39a918c975a2cfb931ff2715348a815bdb7b453e/mujoco-3.3.0-cp312-cp312-win_amd64.whl", hash = "sha256:6e8811d854a5f4b3340ba11220781427659d5a87ced2d60688e476db8f3f6188", size = 4905647, upload-time = "2025-02-27T19:15:37.421Z" },
 ]
 
 [[package]]
@@ -2520,7 +2516,7 @@ requires-dist = [
     { name = "loguru" },
     { name = "mani-skill", specifier = ">=3.0.1" },
     { name = "matplotlib" },
-    { name = "metaworld" },
+    { name = "metaworld", git = "https://github.com/SuhrudhSarathy/Metaworld.git?rev=dev%2Fmulti-env" },
     { name = "omegaconf" },
     { name = "pillow" },
     { name = "pin", marker = "sys_platform == 'darwin'" },

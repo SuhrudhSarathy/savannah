@@ -10,12 +10,13 @@ from savannah.tasks import BaseRobotTask
 from savannah.utils.device import configure_mujoco_gl
 from savannah.utils.observation import ObservationKey
 
-configure_mujoco_gl()
+# configure_mujoco_gl()
 
 import metaworld  # noqa: E402,F401  (registers Meta-World/MT1 with gymnasium)
 import mujoco  # noqa: E402
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
+from metaworld.env_dict import MULTI_INSTANCE_V3_ENVIRONMENTS  # noqa: E402
 
 # We only need the current ee position and the gripper state
 STATE_KEEP_INDICES = [0, 1, 2, 3]
@@ -105,9 +106,14 @@ class MetaworldTask(BaseRobotTask):
         self._action_high = torch.tensor(_ACTION_HIGH, device=device)
 
     def _make_env(self, render_mode: str) -> gym.Env:
-        env = gym.make(
-            "Meta-World/MT1", env_name=self.config.env_name, render_mode=render_mode
-        )
+        env_name = self.config.env_name
+        if env_name in MULTI_INSTANCE_V3_ENVIRONMENTS:
+            # MTN tasks (e.g. hammer-multi-nail-v3) are intentionally kept out
+            # of MT1/ALL_V3_ENVIRONMENTS, so they're registered standalone and
+            # randomize their task on every reset instead of via set_task().
+            env = gym.make(f"Meta-World/{env_name}", render_mode=render_mode)
+        else:
+            env = gym.make("Meta-World/MT1", env_name=env_name, render_mode=render_mode)
         img_size = (
             (self.config.image_size, self.config.image_size)
             if self.config.image_size is not None
