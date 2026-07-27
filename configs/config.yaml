@@ -1,11 +1,11 @@
 defaults:
-  - model: dit_adaln
-  - task: pusht
+  - model: dit_ddim
+  - task: metaworld_hammer_multi_nail
   - trainer: default
   - augmentation: default
   - _self_
 
-name: dit_adaln_pusht
+name: dit_ddim_metaworld_hammer_multi_nail
 
 wandb:
   project: savannah

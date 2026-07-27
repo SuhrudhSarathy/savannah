@@ -96,8 +96,10 @@ class PolicyTrainer:
         # Setup Scheduler
         self.scheduler = get_custom_scheduler(
             self.optimizer,
-            num_warmup_steps=self.config.train.warmup_steps,
-            num_training_steps=self.config.train.training_steps,
+            num_warmup_steps=self.config.train.warmup_steps
+            // self.config.train.gradient_accumulation_steps,
+            num_training_steps=self.config.train.training_steps
+            // self.config.train.gradient_accumulation_steps,
             schedule=self.config.train.schedule,
         )
 

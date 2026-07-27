@@ -7,7 +7,7 @@ config:
   cameras: ["topview", "gripperPOV", "corner"]
   obs_horizon: 1
   action_horizon: ${model.action_horizon}
-  image_size: 128
+  image_size: 226
   batch_size: 32
   num_workers: 4
   train_fraction: 0.95

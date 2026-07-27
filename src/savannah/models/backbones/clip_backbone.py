@@ -11,6 +11,7 @@ class CLIPBackbone(VisionFeatureExtractor):
         image_size: int,
         base_model: str = "openai/clip-vit-base-patch32",
         use_eos_only: bool = True,
+        trainable: bool = True,
     ):
         super().__init__()
 
@@ -21,8 +22,10 @@ class CLIPBackbone(VisionFeatureExtractor):
         self.model = CLIPVisionModel.from_pretrained(self.base_model)
         self.processor = AutoProcessor.from_pretrained(self.base_model)
 
-        for param in self.model.parameters():
-            param.requires_grad = False
+        self.trainable = trainable
+        if not self.trainable:
+            for param in self.model.parameters():
+                param.requires_grad = False
 
         # CLIPVisionModel (unlike CLIPModel) has no projection head, so both
         # pooler_output and last_hidden_state are sized by hidden_size.
@@ -58,8 +61,11 @@ class CLIPBackbone(VisionFeatureExtractor):
         inputs = self.processor(x, return_tensors="pt")
         inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
 
-        self.model.eval()
-        with torch.no_grad():
+        if not self.trainable:
+            self.model.eval()
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+        else:
             outputs = self.model(**inputs)
 
         if self.use_eos_only:
