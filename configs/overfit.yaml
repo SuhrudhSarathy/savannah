@@ -1,6 +1,6 @@
 defaults:
-  - model: dit_adaln
-  - task: pusht
+  - model: dit_ddim
+  - task: metaworld_hammer_multi_nail
   - augmentation: default
   - _self_
 

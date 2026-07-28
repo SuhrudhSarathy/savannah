@@ -10,7 +10,7 @@ from savannah.tasks import BaseRobotTask
 from savannah.utils.device import configure_mujoco_gl
 from savannah.utils.observation import ObservationKey
 
-# configure_mujoco_gl()
+configure_mujoco_gl()
 
 import metaworld  # noqa: E402,F401  (registers Meta-World/MT1 with gymnasium)
 import mujoco  # noqa: E402

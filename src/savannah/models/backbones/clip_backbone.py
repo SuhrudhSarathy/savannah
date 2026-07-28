@@ -3,6 +3,9 @@ import torch
 import torch.nn as nn
 from transformers import AutoProcessor, CLIPVisionModel
 
+from savannah.utils.debug import debug_stat
+from savannah.utils.log import logger
+
 
 class CLIPBackbone(VisionFeatureExtractor):
     def __init__(
@@ -70,7 +73,21 @@ class CLIPBackbone(VisionFeatureExtractor):
 
         if self.use_eos_only:
             features = outputs.pooler_output.unsqueeze(1)
+            debug_stat("features", features)
         else:
             features = outputs.last_hidden_state
 
-        return self.projection(features)
+        out = self.projection(features)
+        debug_stat("out", out)
+        return out
+
+
+if __name__ == "__main__":
+    from savannah.utils.device import get_device
+
+    device = get_device()
+    backbone = CLIPBackbone(512, 226).to(device)
+    x_img = torch.rand(1, 3, 226, 226).to(device)
+
+    out = backbone(x_img)
+    print(torch.isnan(out).any())

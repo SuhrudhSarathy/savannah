@@ -21,7 +21,7 @@ class MultiChoiceAttention(nn.Module):
     def __init__(self, num_encoders: int):
         super().__init__()
         weights = torch.zeros(num_encoders)
-        weights[-1] = torch.inf
+        weights[-1] = 100.0  # High initialisation
         self.weight_matrix = nn.Parameter(weights)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
