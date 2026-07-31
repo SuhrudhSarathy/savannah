@@ -36,6 +36,14 @@ dev = [
     "ruff",
     "pre-commit",
 ]
+cu126 = [
+    "torch",
+    "torchvision",
+]
+cu130 = [
+    "torch",
+    "torchvision",
+]
 
 [build-system]
 requires = ["setuptools>=61.0"]
@@ -43,6 +51,34 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]   # looks for packages inside src/
+
+[tool.uv]
+conflicts = [
+    [
+        { extra = "cu126" },
+        { extra = "cu130" },
+    ],
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu126", extra = "cu126" },
+    { index = "pytorch-cu130", extra = "cu130" },
+]
+torchvision = [
+    { index = "pytorch-cu126", extra = "cu126" },
+    { index = "pytorch-cu130", extra = "cu130" },
+]
 
 [tool.ruff]
 line-length = 88
