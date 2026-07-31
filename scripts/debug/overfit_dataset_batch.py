@@ -1,3 +1,4 @@
+import os
 import sys
 
 try:
@@ -46,6 +47,7 @@ def main(cfg: DictConfig) -> None:
         f"         obs_horizon={cfg_t.obs_horizon}  action_horizon={cfg_t.action_horizon}  image_size={cfg_t.image_size}  cameras={cfg_t.cameras}"
     )
 
+    checkpoint_path = os.path.join(cfg.overfit.checkpoint_dir, "overfit_final.ckpt")
     print(f"Overfitting on a single real batch for {cfg.overfit.steps} steps...")
     losses = overfit_on_batch(
         policy,
@@ -53,6 +55,7 @@ def main(cfg: DictConfig) -> None:
         steps=cfg.overfit.steps,
         lr=cfg.overfit.lr,
         log_every=cfg.overfit.log_every,
+        checkpoint_path=checkpoint_path,
     )
 
     print(f"\nLoss: {losses[0]:.6f} -> {losses[-1]:.6f}")

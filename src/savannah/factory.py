@@ -5,6 +5,9 @@ from omegaconf import DictConfig, OmegaConf
 if not OmegaConf.has_resolver("len"):
     OmegaConf.register_new_resolver("len", len)
 
+if not OmegaConf.has_resolver("eval"):
+    OmegaConf.register_new_resolver("eval", eval)
+
 
 def build_policy(cfg: DictConfig) -> torch.nn.Module:
     return instantiate(cfg.model)

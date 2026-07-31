@@ -4,6 +4,7 @@ from tqdm import tqdm
 
 from savannah.models.policy import Policy
 from savannah.utils.observation import ObservationKey
+import os
 
 
 def overfit_on_batch(
@@ -12,6 +13,7 @@ def overfit_on_batch(
     steps: int,
     lr: float,
     log_every: int = 50,
+    checkpoint_path: str | None = None,
 ) -> list[float]:
     """
     Repeatedly trains `policy` on a single fixed `batch`.
@@ -45,6 +47,11 @@ def overfit_on_batch(
 
         if step % log_every == 0:
             pbar.set_postfix(loss=f"{loss_value:.6f}")
+
+    if checkpoint_path is not None:
+        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+        torch.save(policy.state_dict(), checkpoint_path)
+        print(f"Saved overfit checkpoint to {checkpoint_path}")
 
     return losses
 

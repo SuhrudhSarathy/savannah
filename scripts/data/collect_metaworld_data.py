@@ -32,9 +32,12 @@ INFO_FIELD_SPECS = {
     "in_place_reward": {"dtype": "float32", "shape": (1,)},
     "unscaled_reward": {"dtype": "float32", "shape": (1,)},
     "nail_positions": {"dtype": "float32", "shape": (3, 3)},
+    "nail_pos": {"dtype": "float32", "shape": (3,)},
     "nails_hit": {"dtype": "bool", "shape": (3,)},
     "num_nails_hit": {"dtype": "int64", "shape": (1,)},
     "hammer_dropped_off": {"dtype": "bool", "shape": (1,)},
+    "button_pos": {"dtype": "float32", "shape": (3,)},
+    "button_positions": {"dtype": "float32", "shape": (3, 3)},
 }
 
 

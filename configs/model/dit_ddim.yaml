@@ -1,12 +1,12 @@
 _target_: savannah.models.dit.DiTPolicy
-embed_dim: 512
-encoder_num_blocks: 6
-encoder_num_attn_heads: 8
-encoder_feedforward_dim: 2048
+embed_dim: 128
+encoder_num_blocks: 4
+encoder_num_attn_heads: '${eval: "max(4, ${model.embed_dim}//64)"}'
+encoder_feedforward_dim: '${eval: "4 * ${model.embed_dim}"}'
 encoder_dropout: 0.1
-decoder_num_blocks: 6
-decoder_num_attn_heads: 8
-decoder_feedforward_dim: 2048
+decoder_num_blocks: 4
+decoder_num_attn_heads: '${eval: "max(4, ${model.embed_dim}//64)"}'
+decoder_feedforward_dim: '${eval: "4 * ${model.embed_dim}"}'
 decoder_dropout: 0.1
 state_dim: 4
 action_dim: 4
@@ -28,5 +28,5 @@ vision_encoder:
     image_size: ${task.config.image_size}
     base_model: openai/clip-vit-base-patch32
     use_eos_only: True
-    trainable: True
+    trainable: False
 language_encoder: null

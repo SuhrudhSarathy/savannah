@@ -20,6 +20,7 @@ dependencies = [
     "imageio",
     "matplotlib",
     "lerobot",
+    "lerobot[dataset]",
     "metaworld @ git+https://github.com/SuhrudhSarathy/Metaworld.git@dev/multi-env",
     "gym-pusht",
     "pymunk==6.11.1",

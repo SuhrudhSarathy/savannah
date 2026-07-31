@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 import torch
 from hydra.core.config_store import ConfigStore
 from torch.optim import AdamW
-from torch.amp.grad_scaler import GradScaler
 from tqdm import tqdm
 
 from savannah.models.policy import Policy
@@ -20,6 +19,7 @@ from savannah.utils.logger import ExperimentLogger
 @dataclass
 class TrainParams:
     lr: float = 2e-4
+    weight_decay: float = 1e-6
     vision_lr: float | None = None
     training_steps: int = 100_000
     warmup_steps: int = 1000
@@ -90,7 +90,7 @@ class PolicyTrainer:
                 {"params": other_params, "lr": self.config.train.lr},
                 {"params": vision_params, "lr": vision_lr},
             ],
-            weight_decay=1e-4,
+            weight_decay=self.config.train.weight_decay,
         )
 
         # Setup Scheduler
@@ -110,9 +110,6 @@ class PolicyTrainer:
         self.global_step = 0
         self.best_success_rate = -1.0
         self.best_val_loss = 10000.0
-
-        # Setup Gradscaler
-        self.grad_scaler = GradScaler(self.device.type)
 
         os.makedirs(self.config.checkpoint.checkpoint_dir, exist_ok=True)
 
@@ -149,6 +146,7 @@ class PolicyTrainer:
 
         # Use a flat tqdm loop based on steps, rather than epochs
         pbar = tqdm(total=self.config.train.training_steps, desc="Training")
+        accum_counter = 0
 
         while self.global_step < self.config.train.training_steps:
             self.policy.train()
@@ -163,30 +161,22 @@ class PolicyTrainer:
             # 2. Format batch using the Task (augmentation decays with global_step)
             batch = self.task.format_batch(raw_batch, step=self.global_step)
 
-            with torch.autocast(self.device.type):
+            with torch.autocast(self.device.type, dtype=torch.bfloat16):
                 # 3. Forward Pass & Loss (Policy handles all ODE matching internally!)
                 loss = self.policy.compute_loss(batch)
+                scaled_loss = loss / self.config.train.gradient_accumulation_steps
 
-            # 4. Update the loss for grad scaler
-            self.grad_scaler.scale(
-                loss / self.config.train.gradient_accumulation_steps
-            ).backward()
+            scaled_loss.backward()
+            accum_counter += 1
 
-            # If it is time for gradient accumulation
-            if (
-                self.global_step + 1
-            ) % self.config.train.gradient_accumulation_steps == 0:
-                # 5. Backward Pass
-                self.grad_scaler.unscale_(self.optimizer)
+            # Optimiser step and scheduler step
+            if accum_counter % self.config.train.gradient_accumulation_steps == 0:
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     self.policy.parameters(), 1.0
                 )
-                self.grad_scaler.step(self.optimizer)
-
-                self.grad_scaler.update()
+                self.optimizer.step()
                 self.scheduler.step()
                 self.ema.update()
-
                 self.optimizer.zero_grad()
 
                 self.logger.log_scalars(
@@ -198,6 +188,7 @@ class PolicyTrainer:
                     },
                     step=self.global_step,
                 )
+                accum_counter = 0
 
             # 7. Evaluation & Checkpointing
             if (
