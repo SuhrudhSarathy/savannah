@@ -2,13 +2,13 @@ _target_: savannah.tasks.metaworld.MetaworldTask
 config:
   _target_: savannah.data.dataset.DataSetConfig
   env_name: button-press-v3
-  repo_id: suhrudhsarathy/metaworld-button-press-v3
+  repo_id: suhrudhsarathy/metaworld-button-press-variable-v3
   fps: 20
-  cameras: ["topview", "gripperPOV", "corner"]
+  cameras: ["topview", "corner"]
   obs_horizon: 1
   action_horizon: ${model.action_horizon}
-  image_size: 128
-  batch_size: 32
+  image_size: 226
+  batch_size: 64
   num_workers: 4
   train_fraction: 0.95
   cache_in_memory: true

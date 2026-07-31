@@ -13,7 +13,10 @@ class VisionEncoder(nn.Module):
     def __init__(self, backbone: VisionFeatureExtractor, embed_dim: int):
         super().__init__()
         self.backbone = backbone
-        self.proj = nn.Linear(backbone.out_channels, embed_dim)
+        if embed_dim == backbone.out_channels:
+            self.proj = nn.Identity()
+        else:
+            self.proj = nn.Linear(backbone.out_channels, embed_dim)
 
     @property
     def tokens_per_image(self) -> int:

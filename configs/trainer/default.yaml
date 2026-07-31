@@ -1,5 +1,6 @@
 train:
   lr: 1e-4
+  weight_decay: 1e-6
   vision_lr: 1e-5
   training_steps: 100000
   warmup_steps: 1000
@@ -17,3 +18,4 @@ eval:
 checkpoint:
   checkpoint_dir: checkpoints/${name}
   artifact_name: ${name}
+  resume_from: null

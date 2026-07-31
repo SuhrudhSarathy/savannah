@@ -48,6 +48,10 @@ def main(cfg: DictConfig) -> None:
     )
 
     trainer = PolicyTrainer(policy, task, exp_logger, train_config, device)
+
+    if train_config.checkpoint.resume_from:
+        trainer.load_checkpoint(train_config.checkpoint.resume_from)
+
     trainer.train()
 
     exp_logger.finish()

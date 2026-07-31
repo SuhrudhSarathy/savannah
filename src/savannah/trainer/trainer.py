@@ -41,6 +41,7 @@ class EvalParams:
 class CheckpointParams:
     checkpoint_dir: str = "checkpoints"
     artifact_name: str = "model"
+    resume_from: str | None = None
 
 
 @dataclass
@@ -122,9 +123,33 @@ class PolicyTrainer:
             "scheduler_state_dict": self.scheduler.state_dict(),
             "global_step": self.global_step,
             "success_rate": success_rate,
+            "best_val_loss": self.best_val_loss,
+            "best_success_rate": self.best_success_rate,
         }
         path = os.path.join(self.config.checkpoint.checkpoint_dir, f"{name}.ckpt")
         torch.save(checkpoint, path)
+
+    def load_checkpoint(self, path: str):
+        """Loads a checkpoint saved by save_checkpoint() and restores full training state."""
+        logger.info("Resuming training from checkpoint: {}", path)
+        checkpoint = torch.load(path, map_location=self.device)
+
+        self.policy.load_state_dict(checkpoint["model_state_dict"])
+        self.ema.shadow.load_state_dict(checkpoint["ema_state_dict"])
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+        self.global_step = checkpoint["global_step"]
+        self.best_val_loss = checkpoint.get("best_val_loss", self.best_val_loss)
+        self.best_success_rate = checkpoint.get(
+            "best_success_rate", self.best_success_rate
+        )
+
+        logger.success(
+            "Resumed at step {} (best_val_loss={:.6f}, best_success_rate={:.3f})",
+            self.global_step,
+            self.best_val_loss,
+            self.best_success_rate,
+        )
 
     def train(self):
         logger.info("Starting training for {} steps…", self.config.train.training_steps)
