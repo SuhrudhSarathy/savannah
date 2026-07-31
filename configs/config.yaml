@@ -1,11 +1,11 @@
 defaults:
   - model: dit_ddim
-  - task: metaworld_hammer_multi_nail
+  - task: metaworld_button_press
   - trainer: default
   - augmentation: default
   - _self_
 
-name: dit_ddim_metaworld_hammer_multi_nail
+name: dit_ddim_metaworld_button_press
 
 wandb:
   project: savannah
