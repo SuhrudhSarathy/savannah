@@ -8,7 +8,7 @@ config:
   obs_horizon: 1
   action_horizon: ${model.action_horizon}
   image_size: 226
-  batch_size: 64
+  batch_size: 128
   num_workers: 4
   train_fraction: 0.95
   cache_in_memory: true
