@@ -11,5 +11,5 @@ config:
   batch_size: 128
   num_workers: 4
   train_fraction: 0.95
-  cache_in_memory: true
+  cache_in_memory: false
   augmentation: ${augmentation}
