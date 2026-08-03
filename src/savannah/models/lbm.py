@@ -8,6 +8,7 @@ from savannah.models.encoders import StateEncoder, VisionEncoder
 from savannah.models.encoders.language_encoder import LanguageEncoder
 from savannah.models.policy import Policy
 from savannah.nn.positional_embeddings import get_sinusoidal_position_embedding
+from savannah.nn.rope import RoPESelfAttention
 from savannah.nn.self_attention import SelfAttention
 from savannah.nn.time_embedding import TimeEmbedding
 from savannah.objectives import PolicyObjective
@@ -24,6 +25,7 @@ class DiTBlock(nn.Module):
         cond_dim: int,
         num_attn_heads: int,
         feedforward_dim: int,
+        use_rope: bool = True,
         dropout: float = 0.1,
     ):
         super().__init__()
@@ -34,7 +36,10 @@ class DiTBlock(nn.Module):
         self.feedforward_dim = feedforward_dim
         self.dropout = dropout
 
-        self.attn_block = SelfAttention(embed_dim, num_attn_heads)
+        if use_rope:
+            self.attn_block = RoPESelfAttention(embed_dim, num_attn_heads)
+        else:
+            self.attn_block = SelfAttention(embed_dim, num_attn_heads)
 
         self.ffn_block = nn.Sequential(
             nn.Linear(self.embed_dim, self.feedforward_dim),
@@ -106,6 +111,7 @@ class LBMPolicy(Policy):
         action_dim: int,
         action_horizon: int,
         num_cameras: int,
+        use_rope: bool,
         vision_encoder: VisionEncoder,
         language_encoder: LanguageEncoder | None,
         objective: PolicyObjective,
@@ -120,6 +126,8 @@ class LBMPolicy(Policy):
         self.vision_encoder = vision_encoder
         self.num_cameras = num_cameras
         self.objective = objective
+
+        self.use_rope = use_rope
 
         self.camera_embedding = nn.Embedding(num_cameras, embed_dim)
 
@@ -152,6 +160,7 @@ class LBMPolicy(Policy):
                     self.condition_dim,
                     decoder_num_attn_heads,
                     decoder_feedforward_dim,
+                    use_rope,
                     decoder_dropout,
                 )
                 for _ in range(decoder_num_blocks)

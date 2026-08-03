@@ -91,7 +91,7 @@ def test_load_checkpoint_restores_training_state(tmp_path):
     trainer.save_checkpoint("latest", trainer.best_val_loss)
 
     resumed = build_trainer(tmp_path)
-    resumed.load_checkpoint(str(tmp_path / "latest.ckpt"))
+    resumed.load_checkpoint(str(tmp_path / "latest" / "latest.ckpt"))
 
     assert resumed.global_step == trainer.global_step
     assert resumed.best_val_loss == pytest.approx(trainer.best_val_loss)
@@ -117,6 +117,27 @@ def test_load_checkpoint_restores_training_state(tmp_path):
         trainer.scheduler.state_dict()["last_epoch"]
         == resumed.scheduler.state_dict()["last_epoch"]
     )
+
+
+def test_save_checkpoint_retains_per_step_history_and_updates_latest(tmp_path):
+    trainer = build_trainer(tmp_path)
+
+    take_optimizer_step(trainer)
+    step_a = trainer.global_step
+    trainer.save_checkpoint("latest", 0.9)
+
+    take_optimizer_step(trainer)
+    step_b = trainer.global_step
+    trainer.save_checkpoint("latest", 0.8)
+
+    # Both step archives are retained, not overwritten.
+    assert (tmp_path / str(step_a) / "latest.ckpt").exists()
+    assert (tmp_path / str(step_b) / "latest.ckpt").exists()
+
+    # The "latest" mirror reflects only the most recent save.
+    latest_ckpt = torch.load(tmp_path / "latest" / "latest.ckpt", map_location="cpu")
+    assert latest_ckpt["global_step"] == step_b
+    assert latest_ckpt["success_rate"] == pytest.approx(0.8)
 
 
 def test_load_checkpoint_falls_back_for_missing_best_metric_keys(tmp_path):

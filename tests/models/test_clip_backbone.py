@@ -14,7 +14,10 @@ BASE_MODEL = "openai/clip-vit-base-patch32"
 def backbone():
     torch.manual_seed(0)
     return CLIPBackbone(
-        out_channels=OUT_CHANNELS, image_size=IMAGE_SIZE, base_model=BASE_MODEL
+        out_channels=OUT_CHANNELS,
+        image_size=IMAGE_SIZE,
+        base_model=BASE_MODEL,
+        trainable=False,
     )
 
 

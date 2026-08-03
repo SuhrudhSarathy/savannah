@@ -102,10 +102,15 @@ uv run python scripts/train.py wandb.enable_logging=false
 ```
 
 Checkpoints are written to `trainer.checkpoint_dir` (default `checkpoints/dit_adaln_pusht`).
+Each save writes to two places: a permanent per-step archive
+(`checkpoint_dir/{global_step}/{name}.ckpt`, never overwritten) and a rolling
+`checkpoint_dir/latest/{name}.ckpt` mirror of the most recent checkpoint of
+each kind (`latest`, `best_model`, `best_model_success`).
 
-`best_model`, `best_model_success`, and `latest` checkpoints can additionally be
-uploaded as **W&B artifacts** — controlled by `wandb.enable_model_checkpoint`
-(default `false`, requires `wandb.enable_logging=true`).
+`best_model`, `best_model_success`, and `latest` checkpoints (from the `latest/`
+mirror) can additionally be uploaded as **W&B artifacts** — controlled by
+`wandb.enable_model_checkpoint` (default `false`, requires
+`wandb.enable_logging=true`).
 
 ### Running multiple experiments
 
@@ -135,7 +140,7 @@ Evaluate a trained policy in the simulator and record videos to `eval_videos/`:
 
 ```bash
 # from a local checkpoint
-uv run python scripts/eval/eval.py model=unet checkpoint_path=checkpoints/unet_pusht/latest.ckpt
+uv run python scripts/eval/eval.py model=unet checkpoint_path=checkpoints/unet_pusht/latest/latest.ckpt
 
 # from a W&B model artifact
 uv run python scripts/eval/eval.py model=dit_cross_attn_flow_matching wandb_artifact=savannah/dit_cross_attn_flow_matching_pusht:best

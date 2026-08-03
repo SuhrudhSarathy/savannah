@@ -126,12 +126,18 @@ class PolicyTrainer:
             "best_val_loss": self.best_val_loss,
             "best_success_rate": self.best_success_rate,
         }
-        folder_path = os.path.join(
+        # Permanent per-step archive — one snapshot per global_step, never overwritten.
+        step_dir = os.path.join(
             self.config.checkpoint.checkpoint_dir, str(self.global_step)
         )
-        os.makedirs(folder_path, exist_ok=True)
-        path = os.path.join(folder_path, f"{name}.ckpt")
-        torch.save(checkpoint, path)
+        os.makedirs(step_dir, exist_ok=True)
+        torch.save(checkpoint, os.path.join(step_dir, f"{name}.ckpt"))
+
+        # Rolling mirror of the most recent checkpoint of each kind, for
+        # resuming/uploading without knowing which step it was saved at.
+        latest_dir = os.path.join(self.config.checkpoint.checkpoint_dir, "latest")
+        os.makedirs(latest_dir, exist_ok=True)
+        torch.save(checkpoint, os.path.join(latest_dir, f"{name}.ckpt"))
 
     def load_checkpoint(self, path: str):
         """Loads a checkpoint saved by save_checkpoint() and restores full training state."""
@@ -292,7 +298,7 @@ class PolicyTrainer:
         if self.logger.enable_model_checkpoint:
             for ckpt_name, alias in checkpoint_aliases.items():
                 local_path = os.path.join(
-                    self.config.checkpoint.checkpoint_dir, ckpt_name
+                    self.config.checkpoint.checkpoint_dir, "latest", ckpt_name
                 )
                 if os.path.exists(local_path):
                     self.logger.log_model_artifact(
