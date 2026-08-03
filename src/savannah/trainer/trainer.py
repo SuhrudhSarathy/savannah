@@ -126,7 +126,11 @@ class PolicyTrainer:
             "best_val_loss": self.best_val_loss,
             "best_success_rate": self.best_success_rate,
         }
-        path = os.path.join(self.config.checkpoint.checkpoint_dir, f"{name}.ckpt")
+        folder_path = os.path.join(
+            self.config.checkpoint.checkpoint_dir, str(self.global_step)
+        )
+        os.makedirs(folder_path, exist_ok=True)
+        path = os.path.join(folder_path, f"{name}.ckpt")
         torch.save(checkpoint, path)
 
     def load_checkpoint(self, path: str):
