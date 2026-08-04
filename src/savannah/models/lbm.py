@@ -167,7 +167,7 @@ class LBMPolicy(Policy):
             ]
         )
 
-        self.time_embedding = nn.Sequential(
+        self.timestep_embedding = nn.Sequential(
             TimeEmbedding(embed_dim),
             nn.Linear(embed_dim, 4 * embed_dim),
             nn.GELU(),
@@ -237,7 +237,7 @@ class LBMPolicy(Policy):
             x_time = x_time.unsqueeze(1)
 
         # (B, 1) -> (B, 1, embed_dim)
-        x_time = self.time_embedding(x_time).unsqueeze(1)
+        x_time = self.timestep_embedding(x_time).unsqueeze(1)
         x_time = x_time + self.modality_embed(torch.tensor(3, device=x_time.device))
         debug_stat("x_time (embedded)", x_time)
 

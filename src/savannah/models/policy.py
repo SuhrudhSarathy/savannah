@@ -4,9 +4,9 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 
-from savannah.utils.policy import PolicyOutput
 from savannah.utils.debug import debug_stat
 from savannah.utils.log import logger
+from savannah.utils.policy import PolicyOutput
 
 
 class Policy(ABC, nn.Module):

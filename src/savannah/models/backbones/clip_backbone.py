@@ -6,6 +6,8 @@ from transformers import AutoProcessor, CLIPVisionModel
 from savannah.utils.debug import debug_stat
 from savannah.utils.log import logger
 
+# TODO: Add a pooling layer + position encoding for vision tokens
+
 
 class CLIPBackbone(VisionFeatureExtractor):
     def __init__(
