@@ -25,8 +25,8 @@ def test_plugs_into_vision_encoder(backbone):
     from savannah.models.encoders.vision_encoder import VisionEncoder
 
     embed_dim = 16
-    encoder = VisionEncoder(backbone, embed_dim=embed_dim)
-    out = encoder(torch.randn(B, 3, H, W))
+    encoder = VisionEncoder(backbone, embed_dim=embed_dim, num_cameras=1, num_obs=1)
+    out = encoder([torch.randn(B, 1, 3, H, W)])
     assert out.shape[-1] == embed_dim
 
 

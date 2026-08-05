@@ -19,7 +19,7 @@ def main():
     vision_backbone = CLIPBackbone(
         512, 226, "openai/clip-vit-base-patch32", True, False
     )
-    encoder = VisionEncoder(vision_backbone, 128)
+    encoder = VisionEncoder(vision_backbone, 128, num_cameras=3, num_obs=1)
 
     objective = DDIMObjective(100, 10, 1e-4, 0.02, True)
     policy = DiTPolicy(

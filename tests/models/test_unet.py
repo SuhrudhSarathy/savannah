@@ -2,51 +2,66 @@ import pytest
 import torch
 
 from savannah.models.backbones.resnet_backbone import ResNetBackbone
-from savannah.models.dit import DiTPolicy
 from savannah.models.encoders import VisionEncoder
-from savannah.objectives import OverfitObjective
+from savannah.models.unet import UNetPolicy
+from savannah.objectives import FlowMatchingObjective, OverfitObjective
 from savannah.utils.observation import ObservationKey
 
 B, H, W = 2, 64, 64
 STATE_DIM, ACTION_DIM, ACTION_HORIZON, EMBED_DIM = 7, 6, 8, 64
 NUM_CAMERAS = 2
+NUM_OBS = 1
+UNET_CHANNELS = [32, 64]
 
 
-@pytest.fixture
-def policy():
+def _make_vision_encoder(num_obs=NUM_OBS):
     backbone = ResNetBackbone(out_channels=32)
-    vision_encoder = VisionEncoder(
-        backbone, embed_dim=EMBED_DIM, num_cameras=NUM_CAMERAS, num_obs=1
+    return VisionEncoder(
+        backbone, embed_dim=EMBED_DIM, num_cameras=NUM_CAMERAS, num_obs=num_obs
     )
 
-    policy = DiTPolicy(
+
+def _make_policy(num_obs=NUM_OBS, objective=None):
+    policy = UNetPolicy(
         embed_dim=EMBED_DIM,
-        encoder_num_blocks=2,
-        encoder_num_attn_heads=4,
-        encoder_feedforward_dim=128,
-        encoder_dropout=0.0,
-        decoder_num_blocks=2,
-        decoder_num_attn_heads=4,
-        decoder_feedforward_dim=128,
-        decoder_dropout=0.0,
+        unet_channels=UNET_CHANNELS,
+        num_residual_layers=1,
+        num_obs=num_obs,
         state_dim=STATE_DIM,
         action_dim=ACTION_DIM,
         action_horizon=ACTION_HORIZON,
         num_cameras=NUM_CAMERAS,
-        vision_encoder=vision_encoder,
-        language_encoder=None,
-        objective=OverfitObjective(),
+        vision_encoder=_make_vision_encoder(num_obs=num_obs),
+        objective=objective or OverfitObjective(),
     )
     policy.eval()
     return policy
 
 
-def make_obs(num_cameras=NUM_CAMERAS):
+@pytest.fixture
+def policy():
+    return _make_policy()
+
+
+@pytest.fixture
+def policy_flow():
+    return _make_policy(objective=FlowMatchingObjective())
+
+
+@pytest.fixture
+def policy_multi_obs():
+    return _make_policy(num_obs=2)
+
+
+def make_obs(num_cameras=NUM_CAMERAS, num_obs=NUM_OBS):
     return {
-        ObservationKey.images: [torch.randn(B, 1, 3, H, W) for _ in range(num_cameras)],
-        ObservationKey.state: torch.randn(B, 1, STATE_DIM),
+        ObservationKey.images: [
+            torch.randn(B, num_obs, 3, H, W) for _ in range(num_cameras)
+        ],
+        ObservationKey.state: torch.randn(B, num_obs, STATE_DIM),
         ObservationKey.time: torch.rand(B) * 100.0,
         ObservationKey.actions: torch.randn(B, ACTION_HORIZON, ACTION_DIM),
+        ObservationKey.gt_actions: torch.randn(B, ACTION_HORIZON, ACTION_DIM),
     }
 
 
@@ -64,17 +79,28 @@ def test_output_has_no_nan_or_inf(policy):
 
 
 def test_fewer_cameras_than_registered_raises(policy):
-    # VisionEncoder now strictly validates len(images) == num_cameras it was
-    # constructed with, so passing fewer cameras raises instead of silently
-    # using a prefix of cam indices.
     obs = make_obs(num_cameras=1)
     with pytest.raises(AssertionError):
         policy.compute_action(obs)
 
 
+def test_multi_obs_conditioning(policy_multi_obs):
+    obs = make_obs(num_obs=2)
+    out = policy_multi_obs.compute_action(obs)
+    assert out.actions.shape == (B, ACTION_HORIZON, ACTION_DIM)
+
+
 def test_loss_is_scalar_and_finite(policy):
     obs = make_obs()
     loss = policy.compute_loss(obs)
+    assert loss.shape == ()
+    assert not torch.isnan(loss)
+    assert not torch.isinf(loss)
+
+
+def test_loss_is_scalar_and_finite_flow_matching(policy_flow):
+    obs = make_obs()
+    loss = policy_flow.compute_loss(obs)
     assert loss.shape == ()
     assert not torch.isnan(loss)
     assert not torch.isinf(loss)
@@ -94,21 +120,11 @@ def test_backward_pass_populates_gradients(policy):
     assert not missing_grad, f"parameters with no gradient: {missing_grad}"
 
 
-def test_mask_shape_and_layout(policy):
+def test_missing_noisy_actions_raises(policy):
     obs = make_obs()
-    policy.compute_action(obs)
-
-    n_cond = policy.mask.shape[0] - ACTION_HORIZON
-    assert policy.mask.dtype == torch.bool
-    assert policy.mask[:n_cond, :n_cond].all()
-    assert policy.mask[n_cond:, :n_cond].all()
-    assert policy.mask[n_cond:, n_cond:].all()
-    assert not policy.mask[:n_cond, n_cond:].any()
+    with pytest.raises(AssertionError):
+        policy.forward(obs)
 
 
-def test_language_encoder_none_is_safe(policy):
-    assert policy.language_encoder is None
-    obs = make_obs()
-    obs.pop(ObservationKey.language, None)
-    out = policy.compute_action(obs)
-    assert out.actions.shape == (B, ACTION_HORIZON, ACTION_DIM)
+def test_n_vision_tokens_matches_vision_encoder(policy):
+    assert policy.n_vision_tokens == policy.vision_encoder.num_tokens * EMBED_DIM

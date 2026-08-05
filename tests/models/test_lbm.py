@@ -28,12 +28,14 @@ class StubLanguageEncoder(nn.Module):
         return self.proj(dummy)
 
 
-def _make_vision_encoder():
+def _make_vision_encoder(num_obs=NUM_OBS):
     backbone = ResNetBackbone(out_channels=32)
-    return VisionEncoder(backbone, embed_dim=EMBED_DIM)
+    return VisionEncoder(
+        backbone, embed_dim=EMBED_DIM, num_cameras=NUM_CAMERAS, num_obs=num_obs
+    )
 
 
-def _make_policy(num_obs=NUM_OBS, objective=None, language_encoder=None):
+def _make_policy(num_obs=NUM_OBS, objective=None, language_encoder=None, use_rope=True):
     policy = LBMPolicy(
         embed_dim=EMBED_DIM,
         decoder_num_blocks=2,
@@ -45,7 +47,8 @@ def _make_policy(num_obs=NUM_OBS, objective=None, language_encoder=None):
         action_dim=ACTION_DIM,
         action_horizon=ACTION_HORIZON,
         num_cameras=NUM_CAMERAS,
-        vision_encoder=_make_vision_encoder(),
+        use_rope=use_rope,
+        vision_encoder=_make_vision_encoder(num_obs=num_obs),
         language_encoder=language_encoder,
         objective=objective or OverfitObjective(),
     )
@@ -66,6 +69,11 @@ def policy_flow():
 @pytest.fixture
 def policy_multi_obs():
     return _make_policy(num_obs=2)
+
+
+@pytest.fixture
+def policy_spe():
+    return _make_policy(use_rope=False)
 
 
 @pytest.fixture
@@ -156,9 +164,20 @@ def test_multi_obs_conditioning(policy_multi_obs):
     assert out.actions.shape == (B, ACTION_HORIZON, ACTION_DIM)
 
 
+def test_spe_path_output_shape(policy_spe):
+    obs = make_obs()
+    out = policy_spe.compute_action(obs)
+    assert out.actions.shape == (B, ACTION_HORIZON, ACTION_DIM)
+
+
+def test_spe_path_uses_sinusoidal_action_embedding(policy_spe):
+    assert policy_spe.use_spe is True
+    assert hasattr(policy_spe, "action_time_embedding")
+
+
 def test_condition_dim_matches_decoder_adaln_input(policy):
     n_language = 0
-    n_vision = NUM_CAMERAS * NUM_OBS * policy.vision_encoder.tokens_per_image
+    n_vision = policy.vision_encoder.num_tokens
     n_state = NUM_OBS
     n_time = 1
     expected_condition_dim = (n_language + n_vision + n_state + n_time) * EMBED_DIM

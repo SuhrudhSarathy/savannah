@@ -24,8 +24,6 @@ vision_encoder:
   embed_dim: ${model.embed_dim}
   backbone:
     _target_: savannah.models.backbones.dinov3_backbone.DinoV3Backbone
-    out_channels: ${model.embed_dim}
-
     image_size: ${task.config.image_size}
     base_model: facebook/dinov3-vits16-pretrain-lvd1689m
     use_eos_only: False

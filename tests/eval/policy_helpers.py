@@ -53,7 +53,10 @@ def build_tiny_policy(
     """
     embed_dim = 16
     vision_encoder = VisionEncoder(
-        _TinyBackbone(out_channels=embed_dim), embed_dim=embed_dim
+        _TinyBackbone(out_channels=embed_dim),
+        embed_dim=embed_dim,
+        num_cameras=num_cameras,
+        num_obs=1,
     )
 
     policy = DiTCrossAttnPolicy(

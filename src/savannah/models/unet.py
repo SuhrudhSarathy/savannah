@@ -267,16 +267,10 @@ class UNetPolicy(Policy):
         # TimeEmbedding (generic, no learnable parameters)
         self.time_embedding = TimeEmbedding(self.embed_dim)
 
-        # Camera Embedding
-        self.camera_embedding = nn.Embedding(num_cameras, self.embed_dim)
-
         self.state_encoder = StateEncoder(state_dim, embed_dim)
 
         # Condition dim = [time + vision tokens + state]
-        # vision tokens: N_cams x N_obs x tokens_per_image x embed_dim
-        self.n_vision_tokens = (
-            num_cameras * num_obs * vision_encoder.tokens_per_image * self.embed_dim
-        )
+        self.n_vision_tokens = vision_encoder.num_tokens * self.embed_dim
         self.n_state_tokens = num_obs * self.embed_dim
         self.n_time_tokens = 1 * self.embed_dim
 
@@ -355,7 +349,7 @@ class UNetPolicy(Policy):
         debug_stat("x_time_cond", x_time_cond)
 
         # (B, num_cameras * num_obs, embed_dim) -> (B, num_cameras * num_obs * embed_dim)
-        x_cam_tokens = self._encode_cameras(x_img)
+        x_cam_tokens = self.vision_encoder(x_img)
         debug_stat("x_cam_tokens", x_cam_tokens)
 
         x_cam_cond = rearrange(x_cam_tokens, "b n d -> b (n d)")

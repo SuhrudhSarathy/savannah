@@ -1,28 +1,28 @@
 import torch
-import torch.nn as nn
 from transformers import AutoModel, AutoProcessor
 
 from savannah.models.backbones import VisionFeatureExtractor
+from savannah.models.backbones.token_learner import TokenLearner
+from savannah.nn.positional_embeddings import SinusoidalPositionalEncoding
 from savannah.utils.debug import debug_stat
-from savannah.utils.log import logger
-
-# TODO: Add a pooling layer + position encoding for vision tokens
 
 
 class DinoV3Backbone(VisionFeatureExtractor):
     def __init__(
         self,
-        out_channels: int,
         image_size: int,
         base_model: str = "facebook/dinov3-vits16-pretrain-lvd1689m",
         use_eos_only: bool = True,
         trainable: bool = True,
+        reduce: bool = False,
+        reduced_tokens: int = 4,
     ):
         super().__init__()
 
-        self._out_channels = out_channels
         self.base_model = base_model
         self.use_eos_only = use_eos_only
+        self.reduce = reduce
+        self.reduced_tokens = reduced_tokens
 
         self.model = AutoModel.from_pretrained(self.base_model)
         self.processor = AutoProcessor.from_pretrained(self.base_model)
@@ -33,11 +33,7 @@ class DinoV3Backbone(VisionFeatureExtractor):
                 param.requires_grad = False
 
         self.model_output_dim = self.model.config.hidden_size
-
-        if self.model_output_dim != self.out_channels:
-            self.projection = nn.Linear(self.model_output_dim, self.out_channels)
-        else:
-            self.projection = nn.Identity()
+        self._out_channels = self.model_output_dim
 
         if use_eos_only:
             self._tokens_per_image = 1
@@ -48,6 +44,16 @@ class DinoV3Backbone(VisionFeatureExtractor):
             self._tokens_per_image = (
                 patches_per_side * patches_per_side + 1
             )  # + CLS token
+
+            self.sinusoidal_position_encoding = SinusoidalPositionalEncoding(
+                self.model_output_dim
+            )
+
+            if reduce:
+                self.token_learner = TokenLearner(
+                    self.model_output_dim, reduced_tokens, 8
+                )
+                self._tokens_per_image = reduced_tokens
 
     @property
     def out_channels(self) -> int:
@@ -77,17 +83,18 @@ class DinoV3Backbone(VisionFeatureExtractor):
             ]
             cls_token = outputs.last_hidden_state[:, 0, ...].unsqueeze(1)
             features = torch.cat([cls_token, patch_features_flat], dim=1)
+            features = self.sinusoidal_position_encoding(features)
+            if self.reduce:
+                features = self.token_learner(features)
 
-        out = self.projection(features)
-        debug_stat("out", out)
-        return out
+        return features
 
 
 if __name__ == "__main__":
     from savannah.utils.device import get_device
 
     device = get_device()
-    backbone = DinoV3Backbone(512, 224, use_eos_only=False).to(device)
+    backbone = DinoV3Backbone(224, use_eos_only=False).to(device)
     x_img = torch.rand(1, 3, 224, 224).to(device)
 
     out = backbone(x_img)

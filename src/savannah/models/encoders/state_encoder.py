@@ -15,6 +15,7 @@ class StateEncoder(nn.Module):
             nn.Linear(state_dim, embed_dim), nn.GELU(), nn.Linear(embed_dim, embed_dim)
         )
 
+        # This is used for encoding history in the observation
         self.time_embedding = TimeEmbedding(embed_dim)
 
     def forward(self, x_state: torch.Tensor) -> torch.Tensor:

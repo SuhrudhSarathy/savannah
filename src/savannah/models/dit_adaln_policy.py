@@ -191,8 +191,6 @@ class DiTAdaLNPolicy(Policy):
             nn.Linear(4 * embed_dim, embed_dim),
         )
 
-        self.camera_embedding = nn.Embedding(num_cameras, embed_dim)
-
         self.state_encoder = StateEncoder(self._state_dim, self.embed_dim)
         if language_encoder is not None:
             self.language_encoder = language_encoder
@@ -246,7 +244,7 @@ class DiTAdaLNPolicy(Policy):
         self._debug_stat("noisy_actions (raw)", noisy_actions)
 
         # (B, T, embed_dim)
-        x_cam_tokens = self._encode_cameras(x_img)
+        x_cam_tokens = self.vision_encoder(x_img)
         self._debug_stat("x_cam_tokens", x_cam_tokens)
 
         # (B, N, state_dim) -> (B, N, embedding_dim)

@@ -1,5 +1,3 @@
-import warnings
-
 import torch
 import torch.nn as nn
 from einops import rearrange
@@ -128,21 +126,15 @@ class LBMPolicy(Policy):
         self.objective = objective
 
         self.use_rope = use_rope
-
-        self.camera_embedding = nn.Embedding(num_cameras, embed_dim)
+        self.use_spe = not self.use_rope
 
         self.state_encoder = StateEncoder(self._state_dim, self.embed_dim)
         self.language_encoder = language_encoder
         if language_encoder is not None:
             logger.debug("Initialised Language Encoder into the model")
 
-        sinusoidal_position_embeddings = get_sinusoidal_position_embedding(
-            self._action_horizon, self.embed_dim
-        )
-        self.register_buffer("action_time_embedding", sinusoidal_position_embeddings)
-
         self.n_language_tokens = 1 if language_encoder is not None else 0
-        self.n_vision_tokens = num_cameras * num_obs * vision_encoder.tokens_per_image
+        self.n_vision_tokens = self.vision_encoder.num_tokens
         self.n_state_tokens = num_obs
         self.n_time_tokens = 1
 
@@ -181,6 +173,13 @@ class LBMPolicy(Policy):
             nn.Linear(self.embed_dim, self.embed_dim),
         )
 
+        # Time encoding for actions. This can be skipped, if RoPE is being used internally
+        if self.use_spe:
+            action_time_embedding = get_sinusoidal_position_embedding(
+                self._action_horizon, self.embed_dim
+            )
+            self.register_buffer("action_time_embedding", action_time_embedding)
+
         # Action reprojection
         self.action_reprojection = nn.Linear(self.embed_dim, self._action_dim)
 
@@ -207,7 +206,7 @@ class LBMPolicy(Policy):
         debug_stat("noisy_actions (raw)", noisy_actions)
 
         # (B, T, embed_dim)
-        x_cam_tokens = self._encode_cameras(x_img)
+        x_cam_tokens = self.vision_encoder(x_img)
         x_cam_tokens = x_cam_tokens + self.modality_embed(
             torch.tensor(1, device=x_cam_tokens.device)
         )
@@ -246,8 +245,9 @@ class LBMPolicy(Policy):
         x_noisy_actions = self.action_embedding(noisy_actions)
         debug_stat("x_noisy_actions (embedded)", x_noisy_actions)
 
-        x_noisy_actions = x_noisy_actions + self.action_time_embedding
-        debug_stat("x_noisy_actions (+ pos embed)", x_noisy_actions)
+        if self.use_spe:
+            x_noisy_actions = x_noisy_actions + self.action_time_embedding
+            debug_stat("x_noisy_actions (+ pos embed)", x_noisy_actions)
 
         if x_language is None:
             x_cond_tokens = torch.cat([x_cam_tokens, x_state, x_time], dim=1)
@@ -258,6 +258,7 @@ class LBMPolicy(Policy):
 
         debug_stat("x_cond", x_cond_tokens)
 
+        # Pooling is required to project them for AdaLN-styled conditioning
         x_cond_tokens_pooled = rearrange(x_cond_tokens, "b n e -> b (n e)")
         x_cond_tokens_pooled = x_cond_tokens_pooled.unsqueeze(1)
         debug_stat("x_cond_pooled", x_cond_tokens_pooled)
@@ -270,83 +271,3 @@ class LBMPolicy(Policy):
         x_action = self.action_reprojection(x_dec_out)
         debug_stat("x_action", x_action)
         return PolicyOutput(actions=x_action)
-
-
-if __name__ == "__main__":
-    from savannah.models.backbones.resnet_backbone import ResNetBackbone
-    from savannah.models.encoders import VisionEncoder
-    from savannah.models.lbm import DiTBlock, DiTPolicy
-    from savannah.objectives import FlowMatchingObjective, OverfitObjective
-    from savannah.utils.observation import ObservationKey
-
-    B, H, W = 2, 64, 64
-    STATE_DIM, ACTION_DIM, ACTION_HORIZON, EMBED_DIM = 7, 6, 8, 64
-    NUM_CAMERAS = 2
-    NUM_OBS = 1
-
-    class StubLanguageEncoder(nn.Module):
-        """Lightweight stand-in for LanguageEncoder (avoids downloading CLIP weights)."""
-
-        def __init__(self, embed_dim: int):
-            super().__init__()
-            self.embed_dim = embed_dim
-            self.proj = nn.Linear(1, embed_dim)
-
-        def forward(self, text_inputs: list[str]) -> torch.Tensor:
-            batch = len(text_inputs)
-            dummy = torch.ones(batch, 1, 1)
-            return self.proj(dummy)
-
-    def _make_vision_encoder():
-        backbone = ResNetBackbone(out_channels=32)
-        return VisionEncoder(backbone, embed_dim=EMBED_DIM)
-
-    def _make_policy(num_obs=NUM_OBS, objective=None, language_encoder=None):
-        policy = DiTPolicy(
-            embed_dim=EMBED_DIM,
-            decoder_num_blocks=2,
-            decoder_num_attn_heads=4,
-            decoder_feedforward_dim=128,
-            decoder_dropout=0.0,
-            state_dim=STATE_DIM,
-            num_obs=num_obs,
-            action_dim=ACTION_DIM,
-            action_horizon=ACTION_HORIZON,
-            num_cameras=NUM_CAMERAS,
-            vision_encoder=_make_vision_encoder(),
-            language_encoder=language_encoder,
-            objective=objective or OverfitObjective(),
-        )
-        policy.eval()
-        return policy
-
-    def make_obs(num_cameras=NUM_CAMERAS, num_obs=NUM_OBS, with_language=False):
-        obs = {
-            ObservationKey.images: [
-                torch.randn(B, num_obs, 3, H, W) for _ in range(num_cameras)
-            ],
-            ObservationKey.state: torch.randn(B, num_obs, STATE_DIM),
-            ObservationKey.time: torch.rand(B) * 100.0,
-            ObservationKey.actions: torch.randn(B, ACTION_HORIZON, ACTION_DIM),
-            ObservationKey.gt_actions: torch.randn(B, ACTION_HORIZON, ACTION_DIM),
-        }
-        if with_language:
-            obs[ObservationKey.language] = [f"instruction {i}" for i in range(B)]
-        return obs
-
-    def policy():
-        return _make_policy()
-
-    def policy_flow():
-        return _make_policy(objective=FlowMatchingObjective())
-
-    def policy_multi_obs():
-        return _make_policy(num_obs=2)
-
-    def policy_with_language():
-        return _make_policy(language_encoder=StubLanguageEncoder(EMBED_DIM))
-
-    policy = policy()
-    obs = make_obs()
-    out = policy.compute_action(obs)
-    print(out.actions.shape)

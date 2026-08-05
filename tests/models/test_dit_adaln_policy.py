@@ -1,10 +1,11 @@
 import pytest
 import torch
+import torch.nn as nn
 
 from savannah.models.backbones.resnet_backbone import ResNetBackbone
-from savannah.models.dit import DiTPolicy
+from savannah.models.dit_adaln_policy import DiTAdaLNPolicy
 from savannah.models.encoders import VisionEncoder
-from savannah.objectives import OverfitObjective
+from savannah.objectives import FlowMatchingObjective, OverfitObjective
 from savannah.utils.observation import ObservationKey
 
 B, H, W = 2, 64, 64
@@ -12,20 +13,34 @@ STATE_DIM, ACTION_DIM, ACTION_HORIZON, EMBED_DIM = 7, 6, 8, 64
 NUM_CAMERAS = 2
 
 
-@pytest.fixture
-def policy():
+class StubLanguageEncoder(nn.Module):
+    """Lightweight stand-in for LanguageEncoder (avoids downloading CLIP weights)."""
+
+    def __init__(self, embed_dim: int):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.proj = nn.Linear(1, embed_dim)
+
+    def forward(self, text_inputs: list[str]) -> torch.Tensor:
+        batch = len(text_inputs)
+        dummy = torch.ones(batch, 1, 1)
+        return self.proj(dummy)
+
+
+def _make_vision_encoder():
     backbone = ResNetBackbone(out_channels=32)
-    vision_encoder = VisionEncoder(
+    return VisionEncoder(
         backbone, embed_dim=EMBED_DIM, num_cameras=NUM_CAMERAS, num_obs=1
     )
 
-    policy = DiTPolicy(
+
+def _make_policy(objective=None, language_encoder=None):
+    policy = DiTAdaLNPolicy(
         embed_dim=EMBED_DIM,
-        encoder_num_blocks=2,
+        num_blocks=2,
         encoder_num_attn_heads=4,
         encoder_feedforward_dim=128,
         encoder_dropout=0.0,
-        decoder_num_blocks=2,
         decoder_num_attn_heads=4,
         decoder_feedforward_dim=128,
         decoder_dropout=0.0,
@@ -33,21 +48,40 @@ def policy():
         action_dim=ACTION_DIM,
         action_horizon=ACTION_HORIZON,
         num_cameras=NUM_CAMERAS,
-        vision_encoder=vision_encoder,
-        language_encoder=None,
-        objective=OverfitObjective(),
+        vision_encoder=_make_vision_encoder(),
+        language_encoder=language_encoder,
+        objective=objective or OverfitObjective(),
     )
     policy.eval()
     return policy
 
 
-def make_obs(num_cameras=NUM_CAMERAS):
-    return {
+@pytest.fixture
+def policy():
+    return _make_policy()
+
+
+@pytest.fixture
+def policy_flow():
+    return _make_policy(objective=FlowMatchingObjective())
+
+
+@pytest.fixture
+def policy_with_language():
+    return _make_policy(language_encoder=StubLanguageEncoder(EMBED_DIM))
+
+
+def make_obs(num_cameras=NUM_CAMERAS, with_language=False):
+    obs = {
         ObservationKey.images: [torch.randn(B, 1, 3, H, W) for _ in range(num_cameras)],
         ObservationKey.state: torch.randn(B, 1, STATE_DIM),
         ObservationKey.time: torch.rand(B) * 100.0,
         ObservationKey.actions: torch.randn(B, ACTION_HORIZON, ACTION_DIM),
+        ObservationKey.gt_actions: torch.randn(B, ACTION_HORIZON, ACTION_DIM),
     }
+    if with_language:
+        obs[ObservationKey.language] = [f"instruction {i}" for i in range(B)]
+    return obs
 
 
 def test_output_shape(policy):
@@ -64,9 +98,6 @@ def test_output_has_no_nan_or_inf(policy):
 
 
 def test_fewer_cameras_than_registered_raises(policy):
-    # VisionEncoder now strictly validates len(images) == num_cameras it was
-    # constructed with, so passing fewer cameras raises instead of silently
-    # using a prefix of cam indices.
     obs = make_obs(num_cameras=1)
     with pytest.raises(AssertionError):
         policy.compute_action(obs)
@@ -75,6 +106,14 @@ def test_fewer_cameras_than_registered_raises(policy):
 def test_loss_is_scalar_and_finite(policy):
     obs = make_obs()
     loss = policy.compute_loss(obs)
+    assert loss.shape == ()
+    assert not torch.isnan(loss)
+    assert not torch.isinf(loss)
+
+
+def test_loss_is_scalar_and_finite_flow_matching(policy_flow):
+    obs = make_obs()
+    loss = policy_flow.compute_loss(obs)
     assert loss.shape == ()
     assert not torch.isnan(loss)
     assert not torch.isinf(loss)
@@ -94,21 +133,13 @@ def test_backward_pass_populates_gradients(policy):
     assert not missing_grad, f"parameters with no gradient: {missing_grad}"
 
 
-def test_mask_shape_and_layout(policy):
+def test_missing_noisy_actions_raises(policy):
     obs = make_obs()
-    policy.compute_action(obs)
-
-    n_cond = policy.mask.shape[0] - ACTION_HORIZON
-    assert policy.mask.dtype == torch.bool
-    assert policy.mask[:n_cond, :n_cond].all()
-    assert policy.mask[n_cond:, :n_cond].all()
-    assert policy.mask[n_cond:, n_cond:].all()
-    assert not policy.mask[:n_cond, n_cond:].any()
+    with pytest.raises(AssertionError):
+        policy.forward(obs)
 
 
-def test_language_encoder_none_is_safe(policy):
-    assert policy.language_encoder is None
-    obs = make_obs()
-    obs.pop(ObservationKey.language, None)
-    out = policy.compute_action(obs)
+def test_with_language_encoder(policy_with_language):
+    obs = make_obs(with_language=True)
+    out = policy_with_language.compute_action(obs)
     assert out.actions.shape == (B, ACTION_HORIZON, ACTION_DIM)

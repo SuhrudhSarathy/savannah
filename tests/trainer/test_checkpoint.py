@@ -21,7 +21,9 @@ NUM_CAMERAS = 1
 
 def build_tiny_policy() -> DiTPolicy:
     backbone = ResNetBackbone(out_channels=16)
-    vision_encoder = VisionEncoder(backbone, embed_dim=EMBED_DIM)
+    vision_encoder = VisionEncoder(
+        backbone, embed_dim=EMBED_DIM, num_cameras=NUM_CAMERAS, num_obs=1
+    )
     return DiTPolicy(
         embed_dim=EMBED_DIM,
         encoder_num_blocks=1,

@@ -2,10 +2,7 @@ from abc import ABC, abstractmethod
 
 import torch
 import torch.nn as nn
-from einops import rearrange
 
-from savannah.utils.debug import debug_stat
-from savannah.utils.log import logger
 from savannah.utils.policy import PolicyOutput
 
 
@@ -20,45 +17,6 @@ class Policy(ABC, nn.Module):
 
     def compute_action(self, obs: dict[str, torch.Tensor]) -> PolicyOutput:
         return self.objective.compute_action(self, obs)
-
-    def _encode_cameras(self, images: list[torch.Tensor]) -> torch.Tensor:
-        """
-        images: list of (B, N, 3, H, W), one per camera
-        returns: (B, N_cams * N_tokens, embed_dim)
-
-        Requires subclass to define: self.vision_encoder, self.time_embedding,
-        self.camera_embedding.
-        """
-        cam_tokens = []
-
-        for cam_idx, img in enumerate(images):
-            n = img.shape[1]
-
-            img_r = rearrange(img, "b n c h w -> (b n) c h w")
-            debug_stat("[encode_camera] img_r", img_r)
-            tokens = self.vision_encoder(img_r)  # (B*N, N_tokens, embed_dim)
-            debug_stat("[encode_camera] tokens", tokens)
-            tokens_r = rearrange(tokens, "(b n) t embed_dim -> b n t embed_dim", n=n)
-            debug_stat("[encode_camera] tokens_r", tokens_r)
-
-            t = torch.arange(n, device=img.device).unsqueeze(1)  # (N, 1)
-            time_embedding = self.time_embedding(t)  # (N, embed_dim)
-            time_embedding = time_embedding.view(1, n, 1, -1)
-            debug_stat("[encode_camera] time_embedding", time_embedding)
-
-            camera_embedding = self.camera_embedding(
-                torch.tensor(cam_idx, device=img.device)
-            )
-            camera_embedding = camera_embedding.view(1, 1, 1, -1)
-            debug_stat("[encode_camera] camera_embedding", camera_embedding)
-
-            added_tokens = tokens_r + time_embedding + camera_embedding
-            debug_stat("[encode_camera] added_tokens", added_tokens)
-            tokens = rearrange(added_tokens, "b n t embed_dim -> b (n t) embed_dim")
-            debug_stat("[encode_camera] tokens", tokens)
-            cam_tokens.append(tokens)
-
-        return torch.cat(cam_tokens, dim=1)  # (B, N_cams * N_tokens, embed_dim)
 
     @property
     def action_dim(self):

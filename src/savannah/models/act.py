@@ -139,31 +139,14 @@ class ACTPolicy(Policy):
         self.cvae_decoder = cvae_decoder
         self.num_cameras = num_cameras
 
-        # Learnable camera embedding so the transformer knows which
-        # camera each token came from after concatenation
-        embed_dim = cvae_decoder.decoder_embedding.embedding_dim
-        self.camera_embeddings = nn.Embedding(num_cameras, embed_dim)
-
-    def _encode_cameras(self, images: list[torch.Tensor]) -> torch.Tensor:
-        """
-        images: list of (B, 3, H, W), one per camera
-        returns: (B, N_cams * N_tokens, embed_dim)
-        """
-        cam_tokens = []
-        for cam_idx, img in enumerate(images):
-            tokens = self.vision_encoder(img)  # (B, N_tokens, embed_dim)
-            tokens = tokens + self.camera_embeddings(
-                torch.tensor(cam_idx, device=img.device)
-            )
-            cam_tokens.append(tokens)
-        return torch.cat(cam_tokens, dim=1)  # (B, N_cams * N_tokens, embed_dim)
-
     def forward(self, obs: dict[str, torch.Tensor]) -> PolicyOutput:
         images = obs[ObservationKey.images]  # list of (B, 3, H, W)
         x_state = obs[ObservationKey.state]  # (B, 1, state_dim)
         x_target = obs.get(ObservationKey.gt_actions, None)
 
-        x_cam_tokens = self._encode_cameras(images)
+        # VisionEncoder expects a per-obs history dim: (B, 3, H, W) -> (B, 1, 3, H, W)
+        images_with_obs = [img.unsqueeze(1) for img in images if img.dim() == 4]
+        x_cam_tokens = self.vision_encoder(images_with_obs)
 
         if x_target is not None:
             mu, logvar = self.cvae_encoder(x_state, x_target)

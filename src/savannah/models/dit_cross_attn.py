@@ -154,9 +154,6 @@ class DiTCrossAttnPolicy(Policy):
         # TimeEmbedding (This is generic, no learnable parameters, can be used at all places, timestep is needed)
         self.time_embedding = TimeEmbedding(self.embed_dim)
 
-        # Camera Embedding
-        self.camera_embedding = nn.Embedding(num_cameras, self.embed_dim)
-
         self.state_encoder = StateEncoder(self._state_dim, self.embed_dim)
         if language_encoder is not None:
             self.language_encoder = language_encoder
@@ -204,7 +201,7 @@ class DiTCrossAttnPolicy(Policy):
             raise AssertionError("Pass noisy action for the model to run")
 
         # (B, T, embed_dim)
-        x_cam_tokens = self._encode_cameras(x_img)
+        x_cam_tokens = self.vision_encoder(x_img)
         self._debug_stat("x_cam_tokens", x_cam_tokens)
 
         # (B, N, state_dim) -> (B, N, embedding_dim)
