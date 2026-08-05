@@ -28,8 +28,9 @@ def test_image():
     model = CLIPVisionModel.from_pretrained("openai/clip-vit-base-patch32")
     processor = AutoProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
-    img = torch.randn(32, 3, 96, 96)
+    img = torch.randn(1, 3, 96, 96)
     inputs = processor(images=img, return_tensors="pt")
+    print(inputs.pixel_values.shape)
     outputs = model(**inputs)
     pooled_output = outputs.pooler_output
 

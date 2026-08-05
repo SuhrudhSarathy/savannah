@@ -1,11 +1,11 @@
 defaults:
-  - model: dit_ddim
-  - task: metaworld_button_press
+  - model: lbm_flow_matching
+  - task: pusht
   - trainer: default
   - augmentation: default
   - _self_
 
-name: dit_ddim_metaworld_button_press
+name: lbm_pusht
 
 wandb:
   project: savannah

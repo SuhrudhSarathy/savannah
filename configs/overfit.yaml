@@ -1,6 +1,6 @@
 defaults:
-  - model: dit_ddim
-  - task: metaworld_hammer_multi_nail
+  - model: lbm_flow_matching
+  - task: pusht
   - augmentation: default
   - _self_
 

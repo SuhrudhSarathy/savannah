@@ -16,8 +16,8 @@ class SpatialSoftmax(nn.Module):
 
         # Coordinates from -1 to 1, computed for the actual feature map size
         pos_x, pos_y = torch.meshgrid(
-            torch.linspace(-1, 1, w, device=x.device),
             torch.linspace(-1, 1, h, device=x.device),
+            torch.linspace(-1, 1, w, device=x.device),
             indexing="ij",
         )
         pos_x = pos_x.reshape(-1)
