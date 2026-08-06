@@ -1,5 +1,5 @@
 _target_: savannah.data.augmentation.AugmentationConfig
-enabled: true
+enabled: false
 decay_rate: 20000.0
 crop_scale_min_initial: 0.8
 crop_scale_min_final: 1.0

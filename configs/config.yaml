@@ -1,11 +1,11 @@
 defaults:
-  - model: lbm_flow_matching
-  - task: pusht
+  - model: lbm
+  - task: metaworld_drawer_close
   - trainer: default
   - augmentation: default
   - _self_
 
-name: lbm_pusht
+name: lbm_metaworld_drawer_close
 
 wandb:
   project: savannah

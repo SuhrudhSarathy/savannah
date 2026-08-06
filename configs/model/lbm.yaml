@@ -1,34 +1,37 @@
 _target_: savannah.models.lbm.LBMPolicy
 embed_dim: 768
 time_embed_dim: 128
+state_embed_dim: 128
 decoder_num_blocks: 8
 decoder_num_attn_heads: '${eval: "max(4, ${model.embed_dim}//64)"}'
 decoder_feedforward_dim: '${eval: "4 * ${model.embed_dim}"}'
 decoder_dropout: 0.1
-state_dim: 2
+state_dim: 4
 num_obs: ${task.config.obs_horizon}
-action_dim: 2
-action_horizon: 10
+action_dim: 4
+action_horizon: 20
 num_cameras: ${len:${task.config.cameras}}
 use_rope: true
 objective:
-  _target_: savannah.objectives.FlowMatchingObjective
-  inference_steps: 50
-  integration_type: heun
+  _target_: savannah.objectives.DDIMObjective
+  num_train_timesteps: 100
+  num_inference_steps: 10
+  beta_start: 1e-4
+  beta_end: 0.02
+  clip_sample: True
 vision_encoder:
   _target_: savannah.models.encoders.vision_encoder.VisionEncoder
   embed_dim: ${model.embed_dim}
   num_cameras: ${model.num_cameras}
   num_obs: ${model.num_obs}
   backbone:
-    _target_: savannah.models.backbones.resnet_backbone.ResNetBackbone
-    out_channels: 768
+    _target_: savannah.models.backbones.clip_backbone.CLIPBackbone
     image_size: ${task.config.image_size}
-    use_spatial_softmax: true
-  # backbone:
-  #   _target_: savannah.models.backbones.clip_backbone.CLIPBackbone
-  #   image_size: ${task.config.image_size}
-  #   base_model: openai/clip-vit-base-patch32
-  #   use_eos_only: true
-  #   trainable: false
-language_encoder: null
+    base_model: openai/clip-vit-base-patch32
+    use_eos_only: true
+    trainable: true
+language_encoder:
+  _target_: savannah.models.encoders.language_encoder.LanguageEncoder
+  embed_dim: ${model.embed_dim}
+  base_model: openai/clip-vit-base-patch32
+  use_eos_only: True

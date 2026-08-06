@@ -9,7 +9,9 @@ automatically based on `metaworld.env_dict.MULTI_INSTANCE_V3_ENVIRONMENTS`.
 from __future__ import annotations
 
 import argparse
+import json
 import warnings
+from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
@@ -125,6 +127,15 @@ def _extract_info_field(name: str, info: dict) -> np.ndarray:
     return np.asarray(info[name], dtype=spec["dtype"]).reshape(spec["shape"])
 
 
+def load_task_description(task_name: str) -> str:
+    config_path = Path(__file__).parent / "metaworld_config.json"
+    with open(config_path) as f:
+        task_descriptions = json.load(f)["TASK_DESCRIPTIONS"]
+    return task_descriptions.get(
+        task_name, f"metaworld {task_name} expert demonstration"
+    )
+
+
 def make_env(
     task_name: str,
     seed: int,
@@ -148,7 +159,7 @@ def collect_episode(
     raw_env,
     benchmark,
     expert_policy,
-    task_name: str,
+    task_description: str,
     cameras: list[str],
     info_fields: list[str],
     max_steps: int = 500,
@@ -157,7 +168,6 @@ def collect_episode(
     raw_env.set_task(benchmark.train_tasks[task_idx])
     obs_dict, _ = wrapped_env.reset()
 
-    task_str = f"metaworld {task_name} expert demonstration"
     frames: list[dict] = []
     success = False
 
@@ -170,7 +180,7 @@ def collect_episode(
         frame: dict = {
             "observation.state": raw_obs[STATE_KEEP_INDICES].astype(np.float32),
             "action": action,
-            "task": task_str,
+            "task": task_description,
         }
         for cam in cameras:
             frame[f"observation.images.{cam}"] = obs_dict[cam]
@@ -221,6 +231,7 @@ def main() -> None:
         raise ValueError(f"No expert policy for '{args.task}'. Available: {available}")
 
     expert_cls = mw_policies.ENV_POLICY_MAP[args.task]
+    task_description = load_task_description(args.task)
     features = build_features(args.cameras, args.image_size, args.info_fields)
 
     dataset = LeRobotDataset.create(
@@ -253,7 +264,7 @@ def main() -> None:
                 raw_env,
                 benchmark,
                 expert,
-                args.task,
+                task_description,
                 args.cameras,
                 args.info_fields,
             )
