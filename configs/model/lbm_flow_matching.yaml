@@ -1,8 +1,9 @@
 _target_: savannah.models.lbm.LBMPolicy
-embed_dim: 128
-decoder_num_blocks: 4
-decoder_num_attn_heads: 4
-decoder_feedforward_dim: 512
+embed_dim: 768
+time_embed_dim: 128
+decoder_num_blocks: 8
+decoder_num_attn_heads: '${eval: "max(4, ${model.embed_dim}//64)"}'
+decoder_feedforward_dim: '${eval: "4 * ${model.embed_dim}"}'
 decoder_dropout: 0.1
 state_dim: 2
 num_obs: ${task.config.obs_horizon}
@@ -12,15 +13,17 @@ num_cameras: ${len:${task.config.cameras}}
 use_rope: true
 objective:
   _target_: savannah.objectives.FlowMatchingObjective
-  inference_steps: 10
+  inference_steps: 50
+  integration_type: heun
 vision_encoder:
   _target_: savannah.models.encoders.vision_encoder.VisionEncoder
   embed_dim: ${model.embed_dim}
   num_cameras: ${model.num_cameras}
   num_obs: ${model.num_obs}
   backbone:
-    _target_: savannah.models.backbones.lora_resnet_backbone.LoRAResNetBackbone
-    out_channels: 128
+    _target_: savannah.models.backbones.resnet_backbone.ResNetBackbone
+    out_channels: 768
+    image_size: ${task.config.image_size}
     use_spatial_softmax: true
   # backbone:
   #   _target_: savannah.models.backbones.clip_backbone.CLIPBackbone

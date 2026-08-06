@@ -42,8 +42,13 @@ class OverfitObjective(PolicyObjective):
 
 
 class FlowMatchingObjective(PolicyObjective):
-    def __init__(self, inference_steps: int = 10):
+    def __init__(self, inference_steps: int = 10, integration_type: str = "euler"):
         self.inference_steps = inference_steps
+        self.integration_type = integration_type
+
+        assert self.integration_type in ["euler", "heun"], (
+            f"Only available integration type is euler or huen, configured is {integration_type}"
+        )
 
     def compute_loss(self, model, obs: dict) -> torch.Tensor:
         B = obs[ObservationKey.state].shape[0]
@@ -55,9 +60,7 @@ class FlowMatchingObjective(PolicyObjective):
         x_t = (1 - t.view(B, 1, 1)) * x_0 + t.view(B, 1, 1) * x_1
         target = x_1 - x_0
 
-        obs[ObservationKey.time] = (
-            t * 100.0
-        )  # Scale this to make sense in TimeEmbedding
+        obs[ObservationKey.time] = t
         pred_vel = model.forward(obs, noisy_actions=x_t).actions
         loss = F.mse_loss(pred_vel, target)
         return loss
@@ -73,10 +76,22 @@ class FlowMatchingObjective(PolicyObjective):
             dt = 1.0 / self.inference_steps
 
             for i in range(self.inference_steps):
-                obs[ObservationKey.time] = torch.full(
-                    (B,), i * dt * 100.0, device=device
-                )  # Scale this to make sense in TimeEmbedding
-                x_t = x_t + model.forward(obs, noisy_actions=x_t).actions * dt
+                t_cur = i * dt
+                t_next = (i + 1) * dt
+
+                if self.integration_type == "euler":
+                    obs[ObservationKey.time] = torch.full((B,), i * dt, device=device)
+                    x_t = x_t + model.forward(obs, noisy_actions=x_t).actions * dt
+                elif self.integration_type == "heun":
+                    obs[ObservationKey.time] = torch.full((B,), t_cur, device=device)
+                    v1 = model.forward(obs, noisy_actions=x_t).actions
+
+                    x_pred = x_t + v1 * dt  # Euler predictor
+
+                    obs[ObservationKey.time] = torch.full((B,), t_next, device=device)
+                    v2 = model.forward(obs, noisy_actions=x_pred).actions
+
+                    x_t = x_t + 0.5 * (v1 + v2) * dt
 
             return PolicyOutput(actions=x_t)
 
@@ -112,7 +127,9 @@ class DDIMObjective(PolicyObjective):
 
         target = noise
 
-        obs[ObservationKey.time] = timesteps.float()
+        obs[ObservationKey.time] = (
+            timesteps.float() / self.scheduler.config.num_train_timesteps
+        )
         pred = model.forward(obs, noisy_actions=x_t).actions
         loss = F.mse_loss(pred, target)
         return loss
@@ -129,7 +146,9 @@ class DDIMObjective(PolicyObjective):
 
             for t in self.scheduler.timesteps:
                 obs[ObservationKey.time] = torch.full(
-                    (B,), float(t.item()), device=device
+                    (B,),
+                    float(t.float() / self.scheduler.config.num_train_timesteps),
+                    device=device,
                 )
                 model_output = model.forward(obs, noisy_actions=x_t).actions
                 logger.debug("DDIM step {}: model_output={}", t.item(), model_output)

@@ -1,5 +1,5 @@
 defaults:
-  - model: dit_adaln
+  - model: lbm_flow_matching
   - task: pusht
   - augmentation: default
   - _self_
@@ -7,7 +7,7 @@ defaults:
 checkpoint_path: null # local checkpoint: pass via CLI: checkpoint_path=path/to/model.ckpt
 wandb_artifact: null # OR pull from W&B: wandb_artifact=savannah/flow_matching_pusht:best
 use_ema: true # load ema_state_dict instead of model_state_dict
-num_episodes: 1
+num_episodes: 10
 execute_steps: 4 # how many actions to execute per chunk (receding horizon)
 video_folder: ./eval_videos/pusht_adaln
 episode_index: 0 # which dataset episode to inspect (used by eval_single_episode.py)

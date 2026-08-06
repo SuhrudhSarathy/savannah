@@ -50,7 +50,9 @@ class DiTBlock(nn.Module):
 
         self.dropout_layer = nn.Dropout(self.dropout)
 
-        self.adaln_block = nn.Linear(self.cond_dim, 6 * self.embed_dim)
+        self.adaln_block = nn.Sequential(
+            nn.SiLU(), nn.Linear(self.cond_dim, 6 * self.embed_dim)
+        )
         self._init_adaln_zero()
 
     def _init_adaln_zero(self):
@@ -58,8 +60,8 @@ class DiTBlock(nn.Module):
 
         initially behaves like an identity skip connection.
         """
-        nn.init.constant_(self.adaln_block.weight, 0.0)
-        nn.init.constant_(self.adaln_block.bias, 0.0)
+        nn.init.constant_(self.adaln_block[-1].weight, 0.0)
+        nn.init.constant_(self.adaln_block[-1].bias, 0.0)
 
     def forward(self, x: torch.Tensor, x_cond: torch.Tensor) -> torch.Tensor:
         # x_time: tokens matching to timestep of denoising
@@ -100,6 +102,7 @@ class LBMPolicy(Policy):
     def __init__(
         self,
         embed_dim: int,
+        time_embed_dim: int,
         decoder_num_blocks: int,
         decoder_num_attn_heads: int,
         decoder_feedforward_dim: int,
@@ -117,6 +120,7 @@ class LBMPolicy(Policy):
         super().__init__()
 
         self.embed_dim = embed_dim
+        self.time_embed_dim = time_embed_dim
         self._state_dim = state_dim
         self._action_dim = action_dim
         self._action_horizon = action_horizon
@@ -160,10 +164,10 @@ class LBMPolicy(Policy):
         )
 
         self.timestep_embedding = nn.Sequential(
-            TimeEmbedding(embed_dim),
-            nn.Linear(embed_dim, 4 * embed_dim),
+            TimeEmbedding(self.time_embed_dim),
+            nn.Linear(self.time_embed_dim, 2 * self.time_embed_dim),
             nn.GELU(),
-            nn.Linear(4 * embed_dim, embed_dim),
+            nn.Linear(2 * self.time_embed_dim, self.embed_dim),
         )
 
         # Action Embedding

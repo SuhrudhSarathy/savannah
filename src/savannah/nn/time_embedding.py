@@ -7,7 +7,7 @@ class TimeEmbedding(nn.Module):
         super().__init__()
         self.embedding_dim = embedding_dim
         i = torch.arange(0, embedding_dim, 2).float()  # Only taking even indices
-        div_term = torch.exp(torch.log(torch.tensor(10000.0)) * (i / embedding_dim))
+        div_term = torch.exp(torch.log(torch.tensor(100.0)) * (i / embedding_dim))
         self.register_buffer("div_term", div_term)
 
     def forward(self, t: torch.Tensor) -> torch.Tensor:
