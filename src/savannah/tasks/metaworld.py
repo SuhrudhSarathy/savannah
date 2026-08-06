@@ -30,6 +30,61 @@ _STATE_HIGH = np.array([0.525, 1.025, 0.7, 1.0], dtype=np.float32)
 _ACTION_LOW = np.array([-1.0, -1.0, -1.0, -1.0], dtype=np.float32)
 _ACTION_HIGH = np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32)
 
+# Must match TASK_DESCRIPTIONS in scripts/data/metaworld_config.json so
+# eval-time instructions match the language the policy was trained on.
+TASK_DESCRIPTIONS = {
+    "assembly-v3": "Pick up a nut and place it onto a peg",
+    "basketball-v3": "Dunk the basketball into the basket",
+    "bin-picking-v3": "Grasp the puck from one bin and place it into another bin",
+    "box-close-v3": "Grasp the cover and close the box with it",
+    "button-press-topdown-v3": "Press a button from the top",
+    "button-press-topdown-wall-v3": "Bypass a wall and press a button from the top",
+    "button-press-v3": "Press a button",
+    "button-press-wall-v3": "Bypass a wall and press a button",
+    "coffee-button-v3": "Push a button on the coffee machine",
+    "coffee-pull-v3": "Pull a mug from a coffee machine",
+    "coffee-push-v3": "Push a mug under a coffee machine",
+    "dial-turn-v3": "Rotate a dial 180 degrees",
+    "disassemble-v3": "Pick a nut out of a peg",
+    "door-close-v3": "Close a door with a revolving joint",
+    "door-lock-v3": "Lock the door by rotating the lock clockwise",
+    "door-open-v3": "Open a door with a revolving joint",
+    "door-unlock-v3": "Unlock the door by rotating the lock counter-clockwise",
+    "hand-insert-v3": "Insert the gripper into a hole",
+    "drawer-close-v3": "Push and close a drawer",
+    "drawer-open-v3": "Open a drawer",
+    "faucet-open-v3": "Rotate the faucet counter-clockwise",
+    "faucet-close-v3": "Rotate the faucet clockwise",
+    "hammer-v3": "Hammer a screw on the wall",
+    "handle-press-side-v3": "Press a handle down sideways",
+    "handle-press-v3": "Press a handle down",
+    "handle-pull-side-v3": "Pull a handle up sideways",
+    "handle-pull-v3": "Pull a handle up",
+    "lever-pull-v3": "Pull a lever down 90 degrees",
+    "peg-insert-side-v3": "Insert a peg sideways",
+    "pick-place-wall-v3": "Pick a puck, bypass a wall and place the puck",
+    "pick-out-of-hole-v3": "Pick up a puck from a hole",
+    "reach-v3": "Reach a goal position",
+    "push-back-v3": "Push the puck to a goal",
+    "push-v3": "Push the puck to a goal",
+    "pick-place-v3": "Pick and place a puck to a goal",
+    "plate-slide-v3": "Slide a plate into a cabinet",
+    "plate-slide-side-v3": "Slide a plate into a cabinet sideways",
+    "plate-slide-back-v3": "Get a plate from the cabinet",
+    "plate-slide-back-side-v3": "Get a plate from the cabinet sideways",
+    "peg-unplug-side-v3": "Unplug a peg sideways",
+    "soccer-v3": "Kick a soccer into the goal",
+    "stick-push-v3": "Grasp a stick and push a box using the stick",
+    "stick-pull-v3": "Grasp a stick and pull a box with the stick",
+    "push-wall-v3": "Bypass a wall and push a puck to a goal",
+    "reach-wall-v3": "Bypass a wall and reach a goal",
+    "shelf-place-v3": "Pick and place a puck onto a shelf",
+    "sweep-into-v3": "Sweep a puck into a hole",
+    "sweep-v3": "Sweep a puck off the table",
+    "window-open-v3": "Push and open a window",
+    "window-close-v3": "Push and close a window",
+}
+
 
 class MultiCameraObsWrapper(ObservationWrapper):
     """Renders extra named camera views on top of MetaWorld's proprioceptive obs."""
@@ -104,6 +159,10 @@ class MetaworldTask(BaseRobotTask):
         self._state_high = torch.tensor(_STATE_HIGH, device=device)
         self._action_low = torch.tensor(_ACTION_LOW, device=device)
         self._action_high = torch.tensor(_ACTION_HIGH, device=device)
+        self._task_str = TASK_DESCRIPTIONS.get(
+            self.config.env_name,
+            f"metaworld {self.config.env_name} expert demonstration",
+        )
 
     def _make_env(self, render_mode: str) -> gym.Env:
         env_name = self.config.env_name
@@ -152,11 +211,14 @@ class MetaworldTask(BaseRobotTask):
             images = self._augmenter.augment_images(images, step)
             state_norm = self._augmenter.augment_state(state_norm, step)
 
-        return {
+        result = {
             ObservationKey.images: images,
             ObservationKey.state: state_norm,
             ObservationKey.gt_actions: self._normalize_action(actions),
         }
+        if self.config.use_language:
+            result[ObservationKey.language] = batch[ObservationKey.language]
+        return result
 
     def _obs_to_tensors(self, obs_list: list[dict]) -> dict:
         """Stacks a list of raw env obs dicts (oldest first) into normalized tensors."""
@@ -178,7 +240,10 @@ class MetaworldTask(BaseRobotTask):
             )
             images.append(img_tensor)
 
-        return {ObservationKey.images: images, ObservationKey.state: state_tensor}
+        result = {ObservationKey.images: images, ObservationKey.state: state_tensor}
+        if self.config.use_language:
+            result[ObservationKey.language] = [self._task_str]
+        return result
 
     def preprocess_observation(self, obs: dict) -> dict:
         return self._obs_to_tensors([obs])
