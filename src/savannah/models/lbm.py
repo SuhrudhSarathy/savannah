@@ -103,6 +103,7 @@ class LBMPolicy(Policy):
         self,
         embed_dim: int,
         time_embed_dim: int,
+        state_embed_dim: int,
         decoder_num_blocks: int,
         decoder_num_attn_heads: int,
         decoder_feedforward_dim: int,
@@ -121,6 +122,7 @@ class LBMPolicy(Policy):
 
         self.embed_dim = embed_dim
         self.time_embed_dim = time_embed_dim
+        self.state_embed_dim = state_embed_dim
         self._state_dim = state_dim
         self._action_dim = action_dim
         self._action_horizon = action_horizon
@@ -132,7 +134,7 @@ class LBMPolicy(Policy):
         self.use_rope = use_rope
         self.use_spe = not self.use_rope
 
-        self.state_encoder = StateEncoder(self._state_dim, self.embed_dim)
+        self.state_encoder = StateEncoder(self._state_dim, self.state_embed_dim)
         self.language_encoder = language_encoder
         if language_encoder is not None:
             logger.debug("Initialised Language Encoder into the model")
@@ -143,11 +145,10 @@ class LBMPolicy(Policy):
         self.n_time_tokens = 1
 
         self.condition_dim = (
-            self.n_language_tokens
-            + self.n_vision_tokens
-            + self.n_state_tokens
-            + self.n_time_tokens
-        ) * self.embed_dim
+            (self.n_language_tokens + self.n_vision_tokens) * self.embed_dim
+            + self.n_state_tokens * self.state_embed_dim
+            + self.n_time_tokens * self.time_embed_dim
+        )
 
         self.decoder = nn.ModuleList(
             [
@@ -167,7 +168,7 @@ class LBMPolicy(Policy):
             TimeEmbedding(self.time_embed_dim),
             nn.Linear(self.time_embed_dim, 2 * self.time_embed_dim),
             nn.GELU(),
-            nn.Linear(2 * self.time_embed_dim, self.embed_dim),
+            nn.Linear(2 * self.time_embed_dim, self.time_embed_dim),
         )
 
         # Action Embedding
@@ -186,9 +187,6 @@ class LBMPolicy(Policy):
 
         # Action reprojection
         self.action_reprojection = nn.Linear(self.embed_dim, self._action_dim)
-
-        # Modality Embedding
-        self.modality_embed = nn.Embedding(4, self.embed_dim)
 
     def forward(self, obs: dict[str, torch.Tensor], *args, **kwargs) -> PolicyOutput:
         x_img = obs[ObservationKey.images]
@@ -211,15 +209,10 @@ class LBMPolicy(Policy):
 
         # (B, T, embed_dim)
         x_cam_tokens = self.vision_encoder(x_img)
-        x_cam_tokens = x_cam_tokens + self.modality_embed(
-            torch.tensor(1, device=x_cam_tokens.device)
-        )
         debug_stat("x_cam_tokens", x_cam_tokens)
 
         # (B, N, state_dim) -> (B, N, embedding_dim)
-        x_state = self.state_encoder(x_state) + self.modality_embed(
-            torch.tensor(2, device=x_state.device)
-        )
+        x_state = self.state_encoder(x_state)
         debug_stat("x_state (embedded)", x_state)
 
         if x_language is not None:
@@ -230,9 +223,6 @@ class LBMPolicy(Policy):
             else:
                 # (B, xx, embed_dim)
                 x_language = self.language_encoder(x_language)
-                x_language = x_language + self.modality_embed(
-                    torch.tensor(0, device=x_language.device)
-                )
                 debug_stat("x_lang", x_language)
 
         # (B,) -> (B, 1) optionally
@@ -241,7 +231,6 @@ class LBMPolicy(Policy):
 
         # (B, 1) -> (B, 1, embed_dim)
         x_time = self.timestep_embedding(x_time).unsqueeze(1)
-        x_time = x_time + self.modality_embed(torch.tensor(3, device=x_time.device))
         debug_stat("x_time (embedded)", x_time)
 
         # Project the noisy actions to embeding space
@@ -253,17 +242,21 @@ class LBMPolicy(Policy):
             x_noisy_actions = x_noisy_actions + self.action_time_embedding
             debug_stat("x_noisy_actions (+ pos embed)", x_noisy_actions)
 
+        x_vision_language_tokens = []
         if x_language is None:
-            x_cond_tokens = torch.cat([x_cam_tokens, x_state, x_time], dim=1)
+            x_vision_language_tokens = torch.cat([x_cam_tokens], dim=1)
         else:
-            x_cond_tokens = torch.cat(
-                [x_language, x_cam_tokens, x_state, x_time], dim=1
-            )
+            x_vision_language_tokens = torch.cat([x_language, x_cam_tokens], dim=1)
 
-        debug_stat("x_cond", x_cond_tokens)
+        x_vision_language_tokens = rearrange(
+            x_vision_language_tokens, "b t d -> b (t d)"
+        )
+        x_state_tokens = rearrange(x_state, "b t d -> b (t d)")
+        x_time_tokens = rearrange(x_time, "b t d -> b (t d)")
 
-        # Pooling is required to project them for AdaLN-styled conditioning
-        x_cond_tokens_pooled = rearrange(x_cond_tokens, "b n e -> b (n e)")
+        x_cond_tokens_pooled = torch.cat(
+            [x_vision_language_tokens, x_state_tokens, x_time_tokens], dim=-1
+        )
         x_cond_tokens_pooled = x_cond_tokens_pooled.unsqueeze(1)
         debug_stat("x_cond_pooled", x_cond_tokens_pooled)
 

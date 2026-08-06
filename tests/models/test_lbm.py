@@ -9,7 +9,14 @@ from savannah.objectives import FlowMatchingObjective, OverfitObjective
 from savannah.utils.observation import ObservationKey
 
 B, H, W = 2, 64, 64
-STATE_DIM, ACTION_DIM, ACTION_HORIZON, EMBED_DIM = 7, 6, 8, 64
+STATE_DIM, ACTION_DIM, ACTION_HORIZON, EMBED_DIM, TIME_EMBED_DIM, STATE_EMBED_DIM = (
+    7,
+    6,
+    8,
+    64,
+    8,
+    8,
+)
 NUM_CAMERAS = 2
 NUM_OBS = 1
 
@@ -38,6 +45,8 @@ def _make_vision_encoder(num_obs=NUM_OBS):
 def _make_policy(num_obs=NUM_OBS, objective=None, language_encoder=None, use_rope=True):
     policy = LBMPolicy(
         embed_dim=EMBED_DIM,
+        time_embed_dim=TIME_EMBED_DIM,
+        state_embed_dim=STATE_EMBED_DIM,
         decoder_num_blocks=2,
         decoder_num_attn_heads=4,
         decoder_feedforward_dim=128,
@@ -180,19 +189,23 @@ def test_condition_dim_matches_decoder_adaln_input(policy):
     n_vision = policy.vision_encoder.num_tokens
     n_state = NUM_OBS
     n_time = 1
-    expected_condition_dim = (n_language + n_vision + n_state + n_time) * EMBED_DIM
+    expected_condition_dim = (
+        (n_language + n_vision) * EMBED_DIM
+        + n_state * STATE_EMBED_DIM
+        + n_time * TIME_EMBED_DIM
+    )
 
     assert policy.condition_dim == expected_condition_dim
-    assert policy.decoder[0].adaln_block.in_features == expected_condition_dim
+    assert policy.decoder[0].adaln_block[-1].in_features == expected_condition_dim
 
 
 def test_decoder_blocks_adaln_zero_init(policy):
     for block in policy.decoder:
         assert torch.equal(
-            block.adaln_block.weight, torch.zeros_like(block.adaln_block.weight)
+            block.adaln_block[-1].weight, torch.zeros_like(block.adaln_block[-1].weight)
         )
         assert torch.equal(
-            block.adaln_block.bias, torch.zeros_like(block.adaln_block.bias)
+            block.adaln_block[-1].bias, torch.zeros_like(block.adaln_block[-1].bias)
         )
 
 
