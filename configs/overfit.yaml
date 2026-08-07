@@ -1,6 +1,6 @@
 defaults:
-  - model: lbm_flow_matching
-  - task: pusht
+  - model: lbm
+  - task: metaworld_drawer_close
   - augmentation: default
   - _self_
 
