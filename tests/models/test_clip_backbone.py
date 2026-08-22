@@ -121,6 +121,29 @@ def test_reduce_has_no_effect_when_eos_only():
     assert out.shape == (B, 1, backbone.out_channels)
 
 
+def test_distinguishes_solid_color_images(backbone):
+    # Regression test: dataset images are float32 in [0, 1] (see
+    # savannah/data/dataset.py), but CLIPImageProcessor defaults to
+    # do_rescale=True (divide by 255), which assumes raw [0, 255] input.
+    # Without do_rescale=False in forward(), pixel values get rescaled twice
+    # and collapse into a narrow band near one corner of CLIP's normalized
+    # input range, making clearly different images nearly indistinguishable.
+    backbone.eval()
+    red = torch.zeros(1, 3, IMAGE_SIZE, IMAGE_SIZE)
+    red[:, 0] = 1.0
+    blue = torch.zeros(1, 3, IMAGE_SIZE, IMAGE_SIZE)
+    blue[:, 2] = 1.0
+
+    with torch.no_grad():
+        red_features = backbone(red)
+        blue_features = backbone(blue)
+
+    cos_sim = torch.nn.functional.cosine_similarity(
+        red_features.flatten(1), blue_features.flatten(1)
+    ).item()
+    assert cos_sim < 0.98
+
+
 def test_reduce_gradient_flows():
     backbone = CLIPBackbone(
         image_size=IMAGE_SIZE,

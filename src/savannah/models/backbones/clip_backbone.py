@@ -69,7 +69,7 @@ class CLIPBackbone(VisionFeatureExtractor):
         return self._tokens_per_image
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        inputs = self.processor(x, return_tensors="pt")
+        inputs = self.processor(x, return_tensors="pt", do_rescale=False)
         inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
 
         if not self.trainable:

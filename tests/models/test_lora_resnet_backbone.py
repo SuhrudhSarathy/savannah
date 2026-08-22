@@ -127,6 +127,29 @@ def test_all_convs_including_downsample_shortcuts_are_lora_wrapped(backbone):
         assert m.lora_B.weight.requires_grad
 
 
+def test_distinguishes_solid_color_images(backbone):
+    # Regression guard for the normalization bug fixed in the CLIP/DinoV3
+    # backbones (see clip_backbone.py forward()): clearly different images
+    # must not collapse to near-identical embeddings. LoRAResNetBackbone
+    # doesn't use an HF image processor, so this isn't currently at risk
+    # here, but keeps the invariant checked consistently across vision
+    # backbones.
+    backbone.eval()
+    red = torch.zeros(1, 3, H, W)
+    red[:, 0] = 1.0
+    blue = torch.zeros(1, 3, H, W)
+    blue[:, 2] = 1.0
+
+    with torch.no_grad():
+        red_features = backbone(red)
+        blue_features = backbone(blue)
+
+    cos_sim = nn.functional.cosine_similarity(
+        red_features.flatten(1), blue_features.flatten(1)
+    ).item()
+    assert cos_sim < 0.98
+
+
 def test_pooled_when_spatial_softmax_enabled():
     backbone = LoRAResNetBackbone(
         out_channels=OUT_CHANNELS, image_size=H, use_spatial_softmax=True
