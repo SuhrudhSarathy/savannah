@@ -54,10 +54,9 @@ def main(cfg: DictConfig) -> None:
 
     def on_step(ep, raw_action, action_to_apply, info, terminated, truncated) -> None:
         logger.debug("raw_action={}, action_to_apply={}", raw_action, action_to_apply)
-        logger.info(
-            "Success={}, coverage={}, terminated={}, truncated={}",
-            info["is_success"],
-            info["coverage"],
+        logger.debug(
+            "Info={}, terminated={}, truncated={}",
+            info,
             terminated,
             truncated,
         )

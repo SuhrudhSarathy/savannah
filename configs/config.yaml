@@ -1,11 +1,11 @@
 defaults:
   - model: lbm
-  - task: metaworld_drawer_close
+  - task: metaworld_drawer_open
   - trainer: default
   - augmentation: default
   - _self_
 
-name: lbm_metaworld_drawer_close
+name: lbm_metaworld_drawer_open
 
 wandb:
   project: savannah

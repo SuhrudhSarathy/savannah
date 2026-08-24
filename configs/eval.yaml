@@ -1,6 +1,6 @@
 defaults:
-  - model: lbm_flow_matching
-  - task: pusht
+  - model: lbm
+  - task: metaworld_drawer_open
   - augmentation: default
   - _self_
 
@@ -8,7 +8,7 @@ checkpoint_path: null # local checkpoint: pass via CLI: checkpoint_path=path/to/
 wandb_artifact: null # OR pull from W&B: wandb_artifact=savannah/flow_matching_pusht:best
 use_ema: true # load ema_state_dict instead of model_state_dict
 num_episodes: 10
-execute_steps: 4 # how many actions to execute per chunk (receding horizon)
+execute_steps: 16 # how many actions to execute per chunk (receding horizon)
 video_folder: ./eval_videos/pusht_adaln
 episode_index: 0 # which dataset episode to inspect (used by eval_single_episode.py)
 pick_color: null # ManiSkill ColorMatching only: red/green/blue. If null, chosen randomly each episode.
