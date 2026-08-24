@@ -1,0 +1,15 @@
+_target_: savannah.tasks.abc.ABCPutBottlesTask
+config:
+  _target_: savannah.data.dataset.DataSetConfig
+  # Unused by ABCPutBottlesTask (it reads episode dirs directly, not a
+  # LeRobot repo), but DataSetConfig.repo_id has no default.
+  repo_id: abc/put_bottles
+  root: ${oc.env:ABC_CACHE,cache}/train_real
+  fps: 30
+  cameras: ["top", "left", "right"]
+  obs_horizon: 1
+  action_horizon: ${model.action_horizon}
+  batch_size: 32
+  num_workers: 4
+  use_language: true
+  augmentation: ${augmentation}

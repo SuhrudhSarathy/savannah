@@ -17,6 +17,16 @@ conflicts = [[
 ]]
 
 [[package]]
+name = "abc-bottle-gym"
+version = "0.1.0"
+source = { git = "ssh://git@github.com/SuhrudhSarathy/abc_bottle_gym.git?rev=5ed6b90632b485002cd2e1d15ff4c6369f4be5ad#5ed6b90632b485002cd2e1d15ff4c6369f4be5ad" }
+dependencies = [
+    { name = "gymnasium" },
+    { name = "mujoco" },
+    { name = "numpy" },
+]
+
+[[package]]
 name = "absl-py"
 version = "2.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2979,6 +2989,7 @@ name = "savannah"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "abc-bottle-gym" },
     { name = "diffusers" },
     { name = "einops" },
     { name = "gym-pusht" },
@@ -3016,6 +3027,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "abc-bottle-gym", git = "ssh://git@github.com/SuhrudhSarathy/abc_bottle_gym.git?rev=5ed6b90632b485002cd2e1d15ff4c6369f4be5ad" },
     { name = "diffusers" },
     { name = "einops" },
     { name = "gym-pusht" },
