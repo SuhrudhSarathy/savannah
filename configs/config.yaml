@@ -1,11 +1,11 @@
 defaults:
   - model: lbm
-  - task: metaworld_drawer_open
+  - task: abc_put_bottles
   - trainer: default
   - augmentation: default
   - _self_
 
-name: lbm_metaworld_drawer_open
+name: ${hydra:runtime.choices.model}_${hydra:runtime.choices.task}
 
 wandb:
   project: savannah

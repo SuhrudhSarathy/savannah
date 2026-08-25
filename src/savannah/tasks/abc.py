@@ -6,7 +6,7 @@ live in a flat per-episode layout, not a LeRobot dataset:
     <root>/episode_<uuid>/
         states_actions.bin              # (T, 28) float64: 14 states + 14 actions
         combined_camera-images-rgb.mp4  # cameras stacked vertically, 30 fps
-        episode_metadata.json           # {"cameras": [...], "task_name": ...}
+        episode_metadata.json           # {"cameras": [...], "task_name": ..., "instruction": ...}
 
 `norm_stats.json` (z-score mean/std for state and actions) is expected one
 level above `root`, e.g. `<root>/../norm_stats.json` — this is where abc's
@@ -43,7 +43,11 @@ STATE_DIM = 14
 ACTION_DIM = 14
 ROW_DIM = STATE_DIM + ACTION_DIM
 
-DEFAULT_PROMPT = "put the plastic bottles in the bin"
+
+def _task_name_to_prompt(task_name: str) -> str:
+    """Falls back to abc's own `task_name_to_prompt` convention (underscores
+    -> spaces) when an episode's metadata has no `instruction` field."""
+    return " ".join(task_name.replace("-", " ").replace("_", " ").split())
 
 
 def _load_norm_stats(root: Path) -> Dict[str, Dict[str, np.ndarray]]:
@@ -69,7 +73,14 @@ def _unnormalize(x: np.ndarray, stats: Dict[str, np.ndarray]) -> np.ndarray:
 def _scan_episodes(
     root: Path, chunk_length: int
 ) -> List[Tuple[Path, int, int, Tuple[str, ...], str]]:
-    """Returns (episode_dir, length, usable_starts, source_cameras, task_name)."""
+    """Returns (episode_dir, length, usable_starts, source_cameras, prompt).
+
+    `prompt` is each episode's natural-language instruction: metadata's own
+    `instruction` field if present, else `task_name` prettified the same way
+    abc's `task_name_to_prompt` does. Training (`ABCEpisodeDataset`) and eval
+    (`ABCPutBottlesTask._get_prompt`) both read it from here, so they always
+    agree on what language the policy was conditioned on.
+    """
     episodes = []
     for ep_dir in sorted(root.iterdir()):
         bin_path = ep_dir / "states_actions.bin"
@@ -84,8 +95,10 @@ def _scan_episodes(
         if meta_path.exists():
             meta = json.loads(meta_path.read_text())
         cameras = tuple(meta.get("cameras") or ())
-        task_name = meta.get("task_name", "")
-        episodes.append((ep_dir, length, usable, cameras, task_name))
+        prompt = meta.get("instruction") or _task_name_to_prompt(
+            meta.get("task_name", "")
+        )
+        episodes.append((ep_dir, length, usable, cameras, prompt))
     if not episodes:
         raise ValueError(f"no ABC episodes found under {root}")
     return episodes
@@ -140,9 +153,12 @@ class ABCEpisodeDataset(Dataset):
     in this package.
     """
 
-    def __init__(self, root: str, cameras: List[str], action_horizon: int):
+    def __init__(
+        self, root: str, cameras: List[str], obs_horizon: int, action_horizon: int
+    ):
         self.root = Path(root)
         self.cameras = list(cameras)
+        self.obs_horizon = obs_horizon
         self.action_horizon = action_horizon
         self.episodes = _scan_episodes(self.root, action_horizon)
         self.norm_stats = _load_norm_stats(self.root)
@@ -155,24 +171,44 @@ class ABCEpisodeDataset(Dataset):
         ep_idx = int(np.searchsorted(self.cum, global_idx, side="right"))
         offset = int(self.cum[ep_idx - 1]) if ep_idx > 0 else 0
         k = global_idx - offset
-        ep_dir, length, _, source_cameras, task_name = self.episodes[ep_idx]
+        ep_dir, length, _, source_cameras, prompt = self.episodes[ep_idx]
 
         rows = _read_state_action_rows(ep_dir, k, k + self.action_horizon)
-        state = _normalize(rows[0, :STATE_DIM], self.norm_stats["state"]).astype(
-            np.float32
-        )
         actions = _normalize(rows[:, STATE_DIM:], self.norm_stats["actions"]).astype(
             np.float32
         )
-        images = _decode_frame(ep_dir, k, length, source_cameras, self.cameras)
+
+        # Observation window of obs_horizon frames ending at k, oldest first.
+        # Left-pad by repeating frame 0 when k is near the episode start --
+        # same convention as preprocess_observation_history at eval time.
+        obs_indices = [
+            max(0, k - self.obs_horizon + 1 + i) for i in range(self.obs_horizon)
+        ]
+        state_rows = np.stack(
+            [
+                rows[0, :STATE_DIM]
+                if idx == k
+                else _read_state_action_rows(ep_dir, idx, idx + 1)[0, :STATE_DIM]
+                for idx in obs_indices
+            ]
+        )
+        state = _normalize(state_rows, self.norm_stats["state"]).astype(
+            np.float32
+        )  # (T, 14)
+        frames = [
+            _decode_frame(ep_dir, idx, length, source_cameras, self.cameras)
+            for idx in obs_indices
+        ]
 
         item = {
-            "observation.state": torch.from_numpy(state),
-            "action": torch.from_numpy(actions),
-            "task": task_name,
+            "observation.state": torch.from_numpy(state),  # (T, 14)
+            "action": torch.from_numpy(actions),  # (action_horizon, 14)
+            "task": prompt,
         }
         for cam in self.cameras:
-            item[f"observation.images.{cam}"] = images[cam]
+            item[f"observation.images.{cam}"] = torch.stack(
+                [frame[cam] for frame in frames]
+            )  # (T, C, H, W)
         return item
 
 
@@ -184,13 +220,16 @@ class ABCPutBottlesTask(BaseRobotTask):
     matching validation split is assumed to sit alongside it with the first
     `train` replaced by `val` (`train_real` -> `val_real`, `train_sim` ->
     `val_sim`), matching abc's cache layout. `config.root` is also used at
-    eval time to locate `norm_stats.json` (one level up), so state/action
-    normalization is identical between training and rollout.
+    eval time to locate `norm_stats.json` (one level up) and to derive the
+    language prompt from the training episodes' own metadata, so both
+    state/action normalization and language conditioning are identical
+    between training and rollout.
     """
 
     def __init__(self, config, device: torch.device):
         super().__init__(config, device)
         self._norm_stats: Optional[Dict[str, Dict[str, np.ndarray]]] = None
+        self._prompt: Optional[str] = None
 
     def _get_norm_stats(self) -> Dict[str, Dict[str, np.ndarray]]:
         if self._norm_stats is None:
@@ -201,6 +240,26 @@ class ABCPutBottlesTask(BaseRobotTask):
                 )
             self._norm_stats = _load_norm_stats(Path(self.config.root))
         return self._norm_stats
+
+    def _get_prompt(self) -> str:
+        """The language instruction used for eval-time conditioning.
+
+        Read from the training split's own episode metadata (same field
+        `ABCEpisodeDataset` uses for `item["task"]`), so eval always matches
+        whatever language the policy was actually trained on -- no separate
+        hardcoded prompt to drift out of sync.
+        """
+        if self._prompt is None:
+            if not self.config.root:
+                raise ValueError(
+                    "ABCPutBottlesTask requires config.root to be set (used to "
+                    "derive the eval-time language prompt from training episodes)"
+                )
+            episodes = _scan_episodes(
+                Path(self.config.root), self.config.action_horizon
+            )
+            self._prompt = episodes[0][-1]
+        return self._prompt
 
     def get_train_loader(self) -> DataLoader:
         if self._train_loader is None:
@@ -220,10 +279,16 @@ class ABCPutBottlesTask(BaseRobotTask):
         val_root = train_root.with_name(train_root.name.replace("train", "val", 1))
 
         train_dataset = ABCEpisodeDataset(
-            str(train_root), self.config.cameras, self.config.action_horizon
+            str(train_root),
+            self.config.cameras,
+            self.config.obs_horizon,
+            self.config.action_horizon,
         )
         val_dataset = ABCEpisodeDataset(
-            str(val_root), self.config.cameras, self.config.action_horizon
+            str(val_root),
+            self.config.cameras,
+            self.config.obs_horizon,
+            self.config.action_horizon,
         )
 
         loader_kwargs = {}
@@ -252,11 +317,13 @@ class ABCPutBottlesTask(BaseRobotTask):
     def format_batch(
         self, batch: Dict[str, Any], step: Optional[int] = None
     ) -> Dict[str, torch.Tensor]:
-        state = batch["observation.state"].to(self.device).unsqueeze(1)  # (B, 1, D)
+        state = batch["observation.state"].to(self.device)  # (B, obs_horizon, D)
         actions = batch["action"].to(self.device)  # (B, action_horizon, D)
 
         images = [
-            batch[f"observation.images.{cam}"].to(self.device).unsqueeze(1)
+            batch[f"observation.images.{cam}"].to(
+                self.device
+            )  # (B, obs_horizon, C, H, W)
             for cam in self.config.cameras
         ]
 
@@ -309,7 +376,7 @@ class ABCPutBottlesTask(BaseRobotTask):
 
         result = {ObservationKey.images: images, ObservationKey.state: state_tensor}
         if self.config.use_language:
-            result[ObservationKey.language] = [DEFAULT_PROMPT]
+            result[ObservationKey.language] = [self._get_prompt()]
         return result
 
     def preprocess_observation(self, obs: Dict[str, Any]) -> Dict[str, torch.Tensor]:

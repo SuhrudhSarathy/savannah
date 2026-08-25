@@ -13,7 +13,7 @@ eval:
   eval_using_sim: true
   sim_eval_freq: 5000
   eval_episodes: 1
-  eval_execute_steps: 10
+  eval_execute_steps: 24
 
 checkpoint:
   checkpoint_dir: checkpoints/${name}

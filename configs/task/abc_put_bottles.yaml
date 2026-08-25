@@ -4,12 +4,13 @@ config:
   # Unused by ABCPutBottlesTask (it reads episode dirs directly, not a
   # LeRobot repo), but DataSetConfig.repo_id has no default.
   repo_id: abc/put_bottles
-  root: ${oc.env:ABC_CACHE,cache}/train_real
+  root: ${oc.env:ABC_CACHE,cache}/train_sim
   fps: 30
   cameras: ["top", "left", "right"]
-  obs_horizon: 1
+  image_size: 224 # matches abc's own DINO pipeline (resize_with_pad to 224x224)
+  obs_horizon: 2
   action_horizon: ${model.action_horizon}
-  batch_size: 32
+  batch_size: 8
   num_workers: 4
   use_language: true
   augmentation: ${augmentation}

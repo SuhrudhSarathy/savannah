@@ -42,6 +42,12 @@ class AugmentationConfig:
     state_noise_initial: float = 0.01
     state_noise_final: float = 0.0
 
+    # Probability of zeroing a sample's entire state vector (all obs_horizon
+    # timesteps), forcing the policy to fall back on vision alone. Unlike the
+    # knobs above this does not decay with `decay_rate` -- it's a constant
+    # dropout-style regularizer applied throughout training.
+    state_mask_prob: float = 0.0
+
 
 class ObservationAugmenter:
     """Train-time image/state augmentation with a shared decay schedule.
@@ -73,10 +79,20 @@ class ObservationAugmenter:
         eps = _decay(
             cfg.state_noise_initial, cfg.state_noise_final, step, cfg.decay_rate
         )
-        if eps <= 0:
+        if eps > 0:
+            noise = (torch.rand_like(state) * 2 - 1) * eps
+            state = state + noise
+        return self._mask_state(state)
+
+    def _mask_state(self, state: torch.Tensor) -> torch.Tensor:
+        """Zeroes out entire samples' state (all timesteps) with probability
+        `state_mask_prob`, independent per sample in the batch."""
+        prob = self.config.state_mask_prob
+        if prob <= 0:
             return state
-        noise = (torch.rand_like(state) * 2 - 1) * eps
-        return state + noise
+        keep = torch.rand(state.shape[0], device=state.device) >= prob
+        mask = keep.to(state.dtype).view(-1, *([1] * (state.dim() - 1)))
+        return state * mask
 
     def _augment_camera(self, img: torch.Tensor, step: int) -> torch.Tensor:
         B, N, C, H, W = img.shape
