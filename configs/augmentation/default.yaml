@@ -9,4 +9,4 @@ speckle_std_initial: 0.05
 speckle_std_final: 0.0
 state_noise_initial: 0.01
 state_noise_final: 0.0
-state_mask_prob: 0.1
+state_mask_prob: 0.25

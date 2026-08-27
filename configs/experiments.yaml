@@ -4,36 +4,18 @@
 vram_per_run_gb: 10
 
 experiments:
-  - name: dit_adaln_pusht
+  - name: lbm_drawer_open
     overrides:
-      - model=dit_adaln
-      - name=dit_adaln_pusht
-  # - name: dit_adaln_flow_matching_pusht
-  #   overrides:
-  #     - model=dit_adaln_flow_matching
-  #     - trainer.checkpoint.checkpoint_dir=checkpoints/dit_adaln_flow_matching
-
-  - name: dit_cross_pusht
+      - model=lbm
+      - task=metaworld_drawer_open
+      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/lbm-single-task/lbm_drawer_open/
+  - name: lbm_assembly
     overrides:
-      - model=dit_cross_attn
-      - name=dit_cross_attn_pusht
-
-  - name: dit_lora_ddim
+      - model=lbm
+      - task=metaworld_assembly
+      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/lbm-single-task/lbm_assembly/
+  - name: lbm_hammer
     overrides:
-      - model=dit_lora_ddim
-      - name=dit_lora_ddim_pusht
-
-  # - name: dit_cross_attn_flow_matching_pusht
-  #   overrides:
-  #     - model=dit_cross_attn_flow_matching
-  #     - trainer.checkpoint.checkpoint_dir=checkpoints/dit_cross_attn_flow_matching
-
-  - name: unet_pusht_ddim
-    overrides:
-      - model=unet
-      - name=unet_pusht
-
-  # - name: unet_pusht_flow_matching
-  #   overrides:
-  #     - model=unet_flow_matching
-  #     - trainer.checkpoint.checkpoint_dir=checkpoints/unet_pusht_flow_matching
+      - model=lbm
+      - task=metaworld_hammer
+      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/lbm-single-task/lbm_hammer/
