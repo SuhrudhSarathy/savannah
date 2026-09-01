@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from savannah.models.backbones.resnet_backbone import ResNetBackbone
-from savannah.models.dit import DiTPolicy
+from savannah.models.dit_cross_attn import DITCrossAttnPolicy
 from savannah.models.encoders import VisionEncoder
 from savannah.objectives import OverfitObjective
 from savannah.trainer.trainer import (
@@ -19,25 +19,25 @@ STATE_DIM, ACTION_DIM, ACTION_HORIZON, EMBED_DIM = 7, 6, 8, 32
 NUM_CAMERAS = 1
 
 
-def build_tiny_policy() -> DiTPolicy:
+def build_tiny_policy() -> DITCrossAttnPolicy:
     backbone = ResNetBackbone(out_channels=16)
     vision_encoder = VisionEncoder(
         backbone, embed_dim=EMBED_DIM, num_cameras=NUM_CAMERAS, num_obs=1
     )
-    return DiTPolicy(
+    return DITCrossAttnPolicy(
         embed_dim=EMBED_DIM,
-        encoder_num_blocks=1,
-        encoder_num_attn_heads=2,
-        encoder_feedforward_dim=64,
-        encoder_dropout=0.0,
+        time_embed_dim=8,
+        state_embed_dim=8,
         decoder_num_blocks=1,
         decoder_num_attn_heads=2,
         decoder_feedforward_dim=64,
         decoder_dropout=0.0,
         state_dim=STATE_DIM,
+        num_obs=1,
         action_dim=ACTION_DIM,
         action_horizon=ACTION_HORIZON,
         num_cameras=NUM_CAMERAS,
+        use_rope=True,
         vision_encoder=vision_encoder,
         language_encoder=None,
         objective=OverfitObjective(),

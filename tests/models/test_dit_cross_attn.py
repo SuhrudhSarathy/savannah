@@ -3,14 +3,24 @@ import torch
 import torch.nn as nn
 
 from savannah.models.backbones.resnet_backbone import ResNetBackbone
-from savannah.models.dit_cross_attn import DiTCrossAttnPolicy
+from savannah.models.dit_cross_attn import DiTCrossAttnBlock, DITCrossAttnPolicy
 from savannah.models.encoders import VisionEncoder
+from savannah.nn.rope import RoPESelfAttention
+from savannah.nn.self_attention import SelfAttention
 from savannah.objectives import FlowMatchingObjective, OverfitObjective
 from savannah.utils.observation import ObservationKey
 
 B, H, W = 2, 64, 64
-STATE_DIM, ACTION_DIM, ACTION_HORIZON, EMBED_DIM = 7, 6, 8, 64
+STATE_DIM, ACTION_DIM, ACTION_HORIZON, EMBED_DIM, TIME_EMBED_DIM, STATE_EMBED_DIM = (
+    7,
+    6,
+    8,
+    64,
+    8,
+    8,
+)
 NUM_CAMERAS = 2
+NUM_OBS = 1
 
 
 class StubLanguageEncoder(nn.Module):
@@ -27,24 +37,29 @@ class StubLanguageEncoder(nn.Module):
         return self.proj(dummy)
 
 
-def _make_vision_encoder():
+def _make_vision_encoder(num_obs=NUM_OBS):
     backbone = ResNetBackbone(out_channels=32)
     return VisionEncoder(
-        backbone, embed_dim=EMBED_DIM, num_cameras=NUM_CAMERAS, num_obs=1
+        backbone, embed_dim=EMBED_DIM, num_cameras=NUM_CAMERAS, num_obs=num_obs
     )
 
 
-def _make_policy(objective=None, language_encoder=None):
-    policy = DiTCrossAttnPolicy(
+def _make_policy(num_obs=NUM_OBS, objective=None, language_encoder=None, use_rope=True):
+    policy = DITCrossAttnPolicy(
         embed_dim=EMBED_DIM,
-        num_attn_heads=4,
-        feedforward_dim=128,
-        num_blocks=2,
+        time_embed_dim=TIME_EMBED_DIM,
+        state_embed_dim=STATE_EMBED_DIM,
+        decoder_num_blocks=2,
+        decoder_num_attn_heads=4,
+        decoder_feedforward_dim=128,
+        decoder_dropout=0.0,
         state_dim=STATE_DIM,
+        num_obs=num_obs,
         action_dim=ACTION_DIM,
         action_horizon=ACTION_HORIZON,
         num_cameras=NUM_CAMERAS,
-        vision_encoder=_make_vision_encoder(),
+        use_rope=use_rope,
+        vision_encoder=_make_vision_encoder(num_obs=num_obs),
         language_encoder=language_encoder,
         objective=objective or OverfitObjective(),
     )
@@ -63,14 +78,26 @@ def policy_flow():
 
 
 @pytest.fixture
+def policy_multi_obs():
+    return _make_policy(num_obs=2)
+
+
+@pytest.fixture
+def policy_spe():
+    return _make_policy(use_rope=False)
+
+
+@pytest.fixture
 def policy_with_language():
     return _make_policy(language_encoder=StubLanguageEncoder(EMBED_DIM))
 
 
-def make_obs(num_cameras=NUM_CAMERAS, with_language=False):
+def make_obs(num_cameras=NUM_CAMERAS, num_obs=NUM_OBS, with_language=False):
     obs = {
-        ObservationKey.images: [torch.randn(B, 1, 3, H, W) for _ in range(num_cameras)],
-        ObservationKey.state: torch.randn(B, 1, STATE_DIM),
+        ObservationKey.images: [
+            torch.randn(B, num_obs, 3, H, W) for _ in range(num_cameras)
+        ],
+        ObservationKey.state: torch.randn(B, num_obs, STATE_DIM),
         ObservationKey.time: torch.rand(B) * 100.0,
         ObservationKey.actions: torch.randn(B, ACTION_HORIZON, ACTION_DIM),
         ObservationKey.gt_actions: torch.randn(B, ACTION_HORIZON, ACTION_DIM),
@@ -135,7 +162,121 @@ def test_missing_noisy_actions_raises(policy):
         policy.forward(obs)
 
 
+def test_language_provided_without_encoder_raises(policy):
+    assert policy.language_encoder is None
+    obs = make_obs(with_language=True)
+    with pytest.raises(RuntimeError):
+        policy.compute_action(obs)
+
+
 def test_with_language_encoder(policy_with_language):
     obs = make_obs(with_language=True)
     out = policy_with_language.compute_action(obs)
     assert out.actions.shape == (B, ACTION_HORIZON, ACTION_DIM)
+
+
+def test_multi_obs_conditioning(policy_multi_obs):
+    obs = make_obs(num_obs=2)
+    out = policy_multi_obs.compute_action(obs)
+    assert out.actions.shape == (B, ACTION_HORIZON, ACTION_DIM)
+
+
+def test_spe_path_output_shape(policy_spe):
+    obs = make_obs()
+    out = policy_spe.compute_action(obs)
+    assert out.actions.shape == (B, ACTION_HORIZON, ACTION_DIM)
+
+
+def test_spe_path_uses_sinusoidal_action_embedding(policy_spe):
+    assert policy_spe.use_spe is True
+    assert hasattr(policy_spe, "action_time_embedding")
+
+
+def test_condition_dim_excludes_vision_and_language(policy):
+    # Unlike LBM, cross-attention keeps vision/language tokens as KV inputs
+    # to the decoder rather than folding them into the pooled AdaLN
+    # condition vector, so condition_dim is state+time only.
+    n_state = NUM_OBS
+    n_time = 1
+    expected_condition_dim = n_state * STATE_EMBED_DIM + n_time * TIME_EMBED_DIM
+
+    assert policy.condition_dim == expected_condition_dim
+    assert policy.decoder[0].adaln_block[-1].in_features == expected_condition_dim
+
+
+def test_decoder_blocks_adaln_zero_init(policy):
+    for block in policy.decoder:
+        assert torch.equal(
+            block.adaln_block[-1].weight, torch.zeros_like(block.adaln_block[-1].weight)
+        )
+        assert torch.equal(
+            block.adaln_block[-1].bias, torch.zeros_like(block.adaln_block[-1].bias)
+        )
+
+
+DIT_BLOCK_EMBED_DIM, COND_DIM, NUM_HEADS, FF_DIM, T, T_KV = 32, 48, 4, 64, 5, 7
+
+
+@pytest.fixture
+def dit_cross_attn_block():
+    return DiTCrossAttnBlock(
+        embed_dim=DIT_BLOCK_EMBED_DIM,
+        cond_dim=COND_DIM,
+        num_attn_heads=NUM_HEADS,
+        feedforward_dim=FF_DIM,
+        dropout=0.0,
+    )
+
+
+def test_dit_cross_attn_block_output_shape(dit_cross_attn_block):
+    x = torch.randn(B, T, DIT_BLOCK_EMBED_DIM)
+    x_kv = torch.randn(B, T_KV, DIT_BLOCK_EMBED_DIM)
+    x_cond = torch.randn(B, 1, COND_DIM)
+    out = dit_cross_attn_block(x, x_kv, x_cond)
+    assert out.shape == x.shape
+
+
+def test_dit_cross_attn_block_zero_init_is_identity(dit_cross_attn_block):
+    dit_cross_attn_block.eval()
+    x = torch.randn(B, T, DIT_BLOCK_EMBED_DIM)
+    x_kv = torch.randn(B, T_KV, DIT_BLOCK_EMBED_DIM)
+    x_cond = torch.randn(B, 1, COND_DIM)
+    out = dit_cross_attn_block(x, x_kv, x_cond)
+    assert torch.allclose(out, x)
+
+
+def test_dit_cross_attn_block_gradient_flow(dit_cross_attn_block):
+    dit_cross_attn_block.train()
+    x = torch.randn(B, T, DIT_BLOCK_EMBED_DIM)
+    x_kv = torch.randn(B, T_KV, DIT_BLOCK_EMBED_DIM)
+    x_cond = torch.randn(B, 1, COND_DIM)
+    out = dit_cross_attn_block(x, x_kv, x_cond)
+    out.sum().backward()
+
+    missing_grad = [
+        name
+        for name, p in dit_cross_attn_block.named_parameters()
+        if p.requires_grad and p.grad is None
+    ]
+    assert not missing_grad, f"parameters with no gradient: {missing_grad}"
+
+
+def test_dit_cross_attn_block_uses_rope_by_default():
+    block = DiTCrossAttnBlock(
+        embed_dim=DIT_BLOCK_EMBED_DIM,
+        cond_dim=COND_DIM,
+        num_attn_heads=NUM_HEADS,
+        feedforward_dim=FF_DIM,
+    )
+    assert isinstance(block.self_attn_block, RoPESelfAttention)
+
+
+def test_dit_cross_attn_block_uses_plain_self_attn_when_rope_disabled():
+    block = DiTCrossAttnBlock(
+        embed_dim=DIT_BLOCK_EMBED_DIM,
+        cond_dim=COND_DIM,
+        num_attn_heads=NUM_HEADS,
+        feedforward_dim=FF_DIM,
+        use_rope=False,
+    )
+    assert isinstance(block.self_attn_block, SelfAttention)

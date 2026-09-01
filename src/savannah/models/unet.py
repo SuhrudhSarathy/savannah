@@ -3,6 +3,7 @@ import torch.nn as nn
 from einops import rearrange, repeat
 
 from savannah.models.encoders import VisionEncoder, StateEncoder
+from savannah.models.encoders.language_encoder import LanguageEncoder
 from savannah.models.policy import Policy
 from savannah.nn.time_embedding import TimeEmbedding
 from savannah.objectives import PolicyObjective
@@ -251,6 +252,7 @@ class UNetPolicy(Policy):
         num_cameras: int,
         vision_encoder: VisionEncoder,
         objective: PolicyObjective,
+        language_encoder: LanguageEncoder | None = None,
     ):
         super().__init__()
 
@@ -264,18 +266,31 @@ class UNetPolicy(Policy):
         self.vision_encoder = vision_encoder
         self.objective = objective
 
+        self.language_encoder = language_encoder
+        if language_encoder is not None:
+            logger.debug("Initialised Language Encoder into the model")
+
         # TimeEmbedding (generic, no learnable parameters)
         self.time_embedding = TimeEmbedding(self.embed_dim)
 
         self.state_encoder = StateEncoder(state_dim, embed_dim)
 
-        # Condition dim = [time + vision tokens + state]
+        # Condition dim = [time + vision tokens + state + language (optional)]
+        # Language is assumed to collapse to a single pooled token (e.g. an
+        # eos-only LanguageEncoder), matching the fixed-size FiLM condition
+        # vector this model requires.
         self.n_vision_tokens = vision_encoder.num_tokens * self.embed_dim
         self.n_state_tokens = num_obs * self.embed_dim
         self.n_time_tokens = 1 * self.embed_dim
+        self.n_language_tokens = (
+            1 * self.embed_dim if language_encoder is not None else 0
+        )
 
         self.condition_dim = (
-            self.n_time_tokens + self.n_vision_tokens + self.n_state_tokens
+            self.n_time_tokens
+            + self.n_vision_tokens
+            + self.n_state_tokens
+            + self.n_language_tokens
         )
 
         self.cond_projection_mlp = nn.Sequential(
@@ -328,6 +343,7 @@ class UNetPolicy(Policy):
         x_img = obs[ObservationKey.images]
         x_state = obs[ObservationKey.state]
         x_time = obs[ObservationKey.time]
+        x_language = obs.get(ObservationKey.language, None)
 
         # Get noisy actions from kwargs
         noisy_actions = kwargs.get("noisy_actions", None)
@@ -338,7 +354,19 @@ class UNetPolicy(Policy):
             debug_stat(f"x_img[{cam_idx}] (raw)", img)
         debug_stat("x_state (raw)", x_state)
         debug_stat("x_time (raw)", x_time)
+        if x_language is not None:
+            logger.debug("x_language (raw) {}", x_language)
         debug_stat("noisy_actions (raw)", noisy_actions)
+
+        if x_language is not None:
+            if self.language_encoder is None:
+                raise RuntimeError(
+                    "Language instruction is provided but LanguageEncoder is not specified. Not using language instruction"
+                )
+            else:
+                # (B, xx, embed_dim)
+                x_language = self.language_encoder(x_language)
+                debug_stat("x_lang", x_language)
 
         # (B,) -> (B, 1) optionally
         if x_time.dim() == 1:
@@ -361,14 +389,21 @@ class UNetPolicy(Policy):
         debug_stat("x_state_cond", x_state_cond)
 
         logger.debug(
-            "Time tokens: {} Vision tokens: {} State Tokens: {}",
+            "Time tokens: {} Vision tokens: {} State Tokens: {} Language Tokens: {}",
             self.n_time_tokens,
             self.n_vision_tokens,
             self.n_state_tokens,
+            self.n_language_tokens,
         )
 
+        x_cond_parts = [x_time_cond, x_cam_cond, x_state_cond]
+        if self.language_encoder is not None:
+            x_language_cond = rearrange(x_language, "b n d -> b (n d)")
+            debug_stat("x_language_cond", x_language_cond)
+            x_cond_parts.append(x_language_cond)
+
         # (B, condition_dim)
-        x_cond = torch.cat([x_time_cond, x_cam_cond, x_state_cond], dim=-1)
+        x_cond = torch.cat(x_cond_parts, dim=-1)
         debug_stat("x_cond (pre-mlp)", x_cond)
         x_cond = self.cond_projection_mlp(x_cond)
         debug_stat("x_cond (post-mlp)", x_cond)

@@ -5,6 +5,7 @@ import torchvision.models as models
 from einops import rearrange
 
 from savannah.models.backbones import VisionFeatureExtractor
+from savannah.nn.positional_embeddings import SinusoidalPositionalEncoding2D
 
 
 class SpatialSoftmax(nn.Module):
@@ -56,6 +57,7 @@ class ResNetBackbone(VisionFeatureExtractor):
             spatial = image_size // 32
             self._tokens_per_image = spatial * spatial
             proj_in = 512
+            self.position_encoding_2d = SinusoidalPositionalEncoding2D(proj_in)
 
         self.repoj = nn.Linear(proj_in, out_channels)
 
@@ -72,6 +74,7 @@ class ResNetBackbone(VisionFeatureExtractor):
         if self.use_spatial_softmax:
             features = self.spatial_softmax(features)  # (B, 1024)
         else:
+            features = self.position_encoding_2d(features)
             features = rearrange(features, "b c h w -> b (h w) c")
         return self.repoj(features)
 

@@ -1,4 +1,4 @@
-from math import sqrt, log
+from math import log, sqrt
 
 import torch
 import torch.nn as nn

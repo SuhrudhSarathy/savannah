@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 
 from savannah.models.backbones import VisionFeatureExtractor
-from savannah.models.dit_cross_attn import DiTCrossAttnPolicy
+from savannah.models.dit_cross_attn import DITCrossAttnPolicy
 from savannah.models.encoders import VisionEncoder
 from savannah.objectives import FlowMatchingObjective
 
@@ -45,8 +45,8 @@ def build_tiny_policy(
     action_horizon: int,
     num_cameras: int,
     device: torch.device,
-) -> DiTCrossAttnPolicy:
-    """A tiny, untrained DiTCrossAttnPolicy sized just enough to exercise
+) -> DITCrossAttnPolicy:
+    """A tiny, untrained DITCrossAttnPolicy sized just enough to exercise
     evaluate_and_log's rollout loop (the sim-eval logic used by the trainer)
     for a given task's obs/action shapes, without the cost of a real backbone
     or a real trained checkpoint.
@@ -59,15 +59,20 @@ def build_tiny_policy(
         num_obs=1,
     )
 
-    policy = DiTCrossAttnPolicy(
+    policy = DITCrossAttnPolicy(
         embed_dim=embed_dim,
-        num_attn_heads=2,
-        feedforward_dim=32,
-        num_blocks=1,
+        time_embed_dim=8,
+        state_embed_dim=8,
+        decoder_num_blocks=1,
+        decoder_num_attn_heads=2,
+        decoder_feedforward_dim=32,
+        decoder_dropout=0.0,
         state_dim=state_dim,
+        num_obs=1,
         action_dim=action_dim,
         action_horizon=action_horizon,
         num_cameras=num_cameras,
+        use_rope=True,
         vision_encoder=vision_encoder,
         language_encoder=None,
         objective=FlowMatchingObjective(inference_steps=2),
