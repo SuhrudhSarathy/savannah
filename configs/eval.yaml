@@ -1,6 +1,6 @@
 defaults:
   - model: lbm
-  - task: metaworld_drawer_open
+  - task: abc_put_bottles
   - augmentation: default
   - _self_
 

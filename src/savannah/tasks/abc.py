@@ -28,6 +28,11 @@ import json
 from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from savannah.utils.device import configure_mujoco_gl
+
+
+configure_mujoco_gl()
+
 
 import abc_bottle_gym  # noqa: F401 -- registers "PutBottlesInBin-v0"
 import gymnasium as gym
