@@ -1,5 +1,5 @@
 defaults:
-  - model: lbm
+  - model: dit_cross_attn_flow_matching
   - task: abc_put_bottles
   - trainer: default
   - augmentation: default

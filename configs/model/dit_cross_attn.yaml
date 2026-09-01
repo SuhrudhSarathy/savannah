@@ -1,18 +1,29 @@
-_target_: savannah.models.dit_cross_attn.DiTCrossAttnPolicy
+_target_: savannah.models.dit_cross_attn.DITCrossAttnPolicy
 embed_dim: 128
-num_attn_heads: 4
-feedforward_dim: 512
-num_blocks: 4
+time_embed_dim: 64
+state_embed_dim: 64
+decoder_num_blocks: 4
+decoder_num_attn_heads: 4
+decoder_feedforward_dim: 512
+decoder_dropout: 0.1
 state_dim: 2
+num_obs: ${task.config.obs_horizon}
 action_dim: 2
 action_horizon: 12
 num_cameras: ${len:${task.config.cameras}}
+use_rope: true
 objective:
-  _target_: savannah.objectives.FlowMatchingObjective
-  inference_steps: 10
+  _target_: savannah.objectives.DDIMObjective
+  num_train_timesteps: 100
+  num_inference_steps: 10
+  beta_start: 1e-4
+  beta_end: 0.02
+  clip_sample: True
 vision_encoder:
   _target_: savannah.models.encoders.vision_encoder.VisionEncoder
   embed_dim: ${model.embed_dim}
+  num_cameras: ${model.num_cameras}
+  num_obs: ${model.num_obs}
   backbone:
     _target_: savannah.models.backbones.resnet_backbone.ResNetBackbone
     out_channels: 96
