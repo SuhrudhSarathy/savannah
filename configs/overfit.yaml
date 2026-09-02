@@ -1,13 +1,13 @@
 defaults:
-  - model: lbm
-  - task: metaworld_drawer_close
+  - model: dit_cross_attn_flow_matching
+  - task: abc_put_bottles
   - augmentation: default
   - _self_
 
 overfit:
   batch_size: 1
   image_size: ${task.config.image_size}
-  steps: 2000
+  steps: 500
   lr: 1.0e-4
   log_every: 50
   loss_threshold: 0.01 # final loss must drop below this to count as a PASS

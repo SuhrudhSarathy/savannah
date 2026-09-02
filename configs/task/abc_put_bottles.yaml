@@ -12,5 +12,5 @@ config:
   action_horizon: ${model.action_horizon}
   batch_size: 16
   num_workers: 4
-  use_language: true
+  use_language: false
   augmentation: ${augmentation}
