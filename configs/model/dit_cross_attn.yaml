@@ -1,10 +1,10 @@
 _target_: savannah.models.dit_cross_attn.DITCrossAttnPolicy
-embed_dim: 128
-time_embed_dim: 64
-state_embed_dim: 64
-decoder_num_blocks: 4
-decoder_num_attn_heads: 4
-decoder_feedforward_dim: 512
+embed_dim: 768
+time_embed_dim: '${eval: "${model.embed_dim} // 4"}'
+state_embed_dim: '${eval: "${model.embed_dim} // 4"}'
+decoder_num_blocks: 8
+decoder_num_attn_heads: '${eval: "max(4, ${model.embed_dim}//64)"}'
+decoder_feedforward_dim: '${eval: "2 * ${model.embed_dim}"}'
 decoder_dropout: 0.1
 state_dim: 2
 num_obs: ${task.config.obs_horizon}

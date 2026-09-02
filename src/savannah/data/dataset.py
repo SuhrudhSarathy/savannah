@@ -32,6 +32,11 @@ class DataSetConfig:
     num_workers: int = 4
     train_fraction: float = 0.95
 
+    # Cap the number of episodes used for validation (None = use all).
+    # Useful when the val split is large and running full val every eval
+    # is too slow. Currently only honored by ABCPutBottlesTask.
+    val_episodes: Optional[int] = None
+
     # Cache decoded (and resized) samples in memory after first access,
     # so each sample is only decoded once across all epochs.
     cache_in_memory: bool = False

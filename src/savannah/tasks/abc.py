@@ -154,13 +154,20 @@ class ABCEpisodeDataset(Dataset):
     """
 
     def __init__(
-        self, root: str, cameras: List[str], obs_horizon: int, action_horizon: int
+        self,
+        root: str,
+        cameras: List[str],
+        obs_horizon: int,
+        action_horizon: int,
+        max_episodes: Optional[int] = None,
     ):
         self.root = Path(root)
         self.cameras = list(cameras)
         self.obs_horizon = obs_horizon
         self.action_horizon = action_horizon
         self.episodes = _scan_episodes(self.root, action_horizon)
+        if max_episodes is not None:
+            self.episodes = self.episodes[:max_episodes]
         self.norm_stats = _load_norm_stats(self.root)
         self.cum = np.cumsum([usable for _, _, usable, _, _ in self.episodes])
 
@@ -289,6 +296,7 @@ class ABCPutBottlesTask(BaseRobotTask):
             self.config.cameras,
             self.config.obs_horizon,
             self.config.action_horizon,
+            max_episodes=self.config.val_episodes,
         )
 
         loader_kwargs = {}

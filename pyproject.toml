@@ -21,7 +21,7 @@ dependencies = [
     "matplotlib",
     "lerobot==0.5.1",
     "metaworld @ git+https://github.com/SuhrudhSarathy/Metaworld.git@dev/multi-env",
-    # "abc-bottle-gym @ git+ssh://git@github.com/SuhrudhSarathy/abc_bottle_gym.git@5ed6b90632b485002cd2e1d15ff4c6369f4be5ad",
+    "abc-bottle-gym @ git+ssh://git@github-personal/SuhrudhSarathy/abc_bottle_gym.git@5ed6b90632b485002cd2e1d15ff4c6369f4be5ad",
     "gym-pusht",
     "pymunk==6.11.1",
     "loguru",
