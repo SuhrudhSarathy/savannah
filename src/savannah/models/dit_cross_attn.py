@@ -9,13 +9,32 @@ from savannah.nn.cross_attention import CrossAttention
 from savannah.nn.positional_embeddings import get_sinusoidal_position_embedding
 from savannah.nn.rope import RoPESelfAttention
 from savannah.nn.self_attention import SelfAttention
-from savannah.nn.cross_attention import CrossAttention
 from savannah.nn.time_embedding import TimeEmbedding
 from savannah.objectives import PolicyObjective
 from savannah.utils.debug import debug_stat
 from savannah.utils.log import logger
 from savannah.utils.observation import ObservationKey
 from savannah.utils.policy import PolicyOutput
+
+
+class FFNBlock(nn.Module):
+    # Refer: https://sebastianraschka.com/faq/docs/swiglu-modern-llms.html
+    def __init__(self, embed_dim: int, feedforward_dim: int):
+        super().__init__()
+        self.w_gate = nn.Linear(embed_dim, feedforward_dim)
+        self.w_up = nn.Linear(embed_dim, feedforward_dim)
+
+        self.w_down = nn.Linear(feedforward_dim, embed_dim)
+
+        self.silu = nn.SiLU()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x_up = self.w_up(x)
+        x_gate = self.w_gate(x)
+
+        x_out = self.silu(x_gate) * x_up
+
+        return self.w_down(x_out)
 
 
 class DiTCrossAttnBlock(nn.Module):
@@ -42,11 +61,7 @@ class DiTCrossAttnBlock(nn.Module):
             self.self_attn_block = SelfAttention(embed_dim, num_attn_heads)
 
         self.cross_attn_block = CrossAttention(embed_dim, num_attn_heads)
-        self.ffn_block = nn.Sequential(
-            nn.Linear(self.embed_dim, self.feedforward_dim),
-            nn.GELU(),
-            nn.Linear(self.feedforward_dim, self.embed_dim),
-        )
+        self.ffn_block = FFNBlock(embed_dim, feedforward_dim)
 
         self.layer_norm1 = nn.LayerNorm(self.embed_dim)
         self.layer_norm2 = nn.LayerNorm(self.embed_dim)

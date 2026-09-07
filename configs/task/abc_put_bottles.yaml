@@ -10,7 +10,8 @@ config:
   image_size: 224 # matches abc's own DINO pipeline (resize_with_pad to 224x224)
   obs_horizon: 2
   action_horizon: ${model.action_horizon}
-  batch_size: 16
+  batch_size: 32
   num_workers: 4
+  val_episodes: 5
   use_language: false
   augmentation: ${augmentation}
