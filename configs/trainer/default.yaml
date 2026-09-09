@@ -2,10 +2,10 @@ train:
   lr: 1e-4
   weight_decay: 1e-6
   vision_lr: 1e-5
-  training_steps: 100000
+  training_steps: 75000
   warmup_steps: 1000
-  schedule: constant
-  gradient_accumulation_steps: 8
+  schedule: cosine
+  gradient_accumulation_steps: 4
   ema_decay: 0.9999
 
 eval:

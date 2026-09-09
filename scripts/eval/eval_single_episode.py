@@ -150,7 +150,7 @@ def run_dataset_episode_eval(cfg: DictConfig) -> None:
     checkpoint = torch.load(checkpoint_path, map_location=device)
     state_key = "ema_state_dict" if cfg.use_ema else "model_state_dict"
     policy.load_state_dict(checkpoint[state_key])
-    policy.eval()
+    # policy.eval()
 
     # ABCPutBottlesTask has no LeRobotDataset backing it (its episodes live
     # in flat per-episode directories, see savannah/tasks/abc.py's module

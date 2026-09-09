@@ -4,18 +4,36 @@
 vram_per_run_gb: 10
 
 experiments:
-  - name: lbm_drawer_open
+  - name: dit_cross_attn_disassemble
     overrides:
-      - model=lbm
-      - task=metaworld_drawer_open
-      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/lbm-single-task/lbm_drawer_open/
-  - name: lbm_assembly
+      - model=dit_cross_attn
+      - task=metaworld_disassemble
+      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/dit-cross-attn-single-task/dit_cross_attn_disassemble/
+
+  - name: dit_cross_attn_assembly
     overrides:
-      - model=lbm
+      - model=dit_cross_attn
       - task=metaworld_assembly
-      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/lbm-single-task/lbm_assembly/
-  - name: lbm_hammer
+      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/dit-cross-attn-single-task/dit_cross_attn_assembly/
+  - name: dit_cross_attn_hammer
     overrides:
-      - model=lbm
+      - model=dit_cross_attn
       - task=metaworld_hammer
-      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/lbm-single-task/lbm_hammer/
+      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/dit-cross-attn-single-task/dit_cross_attn_hammer/
+  - name: dit_cross_attn_drawer_close
+    overrides:
+      - model=dit_cross_attn
+      - task=metaworld_drawer_close
+      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/dit-cross-attn-single-task/dit_cross_attn_drawer_close/
+
+  - name: dit_cross_attn_button_press
+    overrides:
+      - model=dit_cross_attn
+      - task=metaworld_button_press
+      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/dit-cross-attn-single-task/dit_cross_attn_button_press/
+
+  - name: dit_cross_attn_drawer_open
+    overrides:
+      - model=dit_cross_attn
+      - task=metaworld_drawer_open
+      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/dit-cross-attn-single-task/dit_cross_attn_drawer_open/

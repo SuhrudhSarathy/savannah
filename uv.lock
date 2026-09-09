@@ -3027,11 +3027,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-<<<<<<< Updated upstream
-    { name = "abc-bottle-gym", git = "ssh://git@github-personal/SuhrudhSarathy/abc_bottle_gym.git?rev=5ed6b90632b485002cd2e1d15ff4c6369f4be5ad" },
-=======
-    { name = "abc-bottle-gym", git = "ssh://git@github.com/SuhrudhSarathy/abc_bottle_gym.git?rev=5ed6b90632b485002cd2e1d15ff4c6369f4be5ad" },
->>>>>>> Stashed changes
+    { name = "abc-bottle-gym", git = "https://github.com/SuhrudhSarathy/abc_bottle_gym.git?rev=5ed6b90632b485002cd2e1d15ff4c6369f4be5ad" },
     { name = "diffusers" },
     { name = "einops" },
     { name = "gym-pusht" },

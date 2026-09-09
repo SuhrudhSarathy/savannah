@@ -1,6 +1,6 @@
 defaults:
-  - model: dit_cross_attn_flow_matching
-  - task: abc_put_bottles
+  - model: dit_cross_attn
+  - task: metaworld_assembly
   - augmentation: default
   - _self_
 
