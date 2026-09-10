@@ -205,6 +205,67 @@ class LerobotDatasetWrapper:
         )
         return train_loader, val_loader
 
+    @classmethod
+    def get_episode_loader(
+        cls,
+        config: DataSetConfig,
+        device: torch.device,
+        episode_index: int,
+        frame_index: int | None = 0,
+    ) -> DataLoader:
+        """Builds a batch_size=1 loader over one fixed episode, bypassing the
+        (randomly shuffled) train/val split entirely.
+
+        `frame_index=<int>` picks one frame within the episode -> the loader
+        yields a single batch, that frame's obs/action window.
+        `frame_index=None` selects every frame in the episode, in order -> the
+        loader yields one batch_size=1 batch per frame, for cycling through
+        the whole episode one frame at a time.
+
+        Lets debug scripts (overfit, attention-viz) pin down and share the
+        exact same sample(s), instead of each pulling an independently random
+        batch from `create_loaders`' shuffled train loader / re-split val set.
+        """
+        deltas = cls._build_timestamps(config)
+
+        image_transforms = None
+        if config.image_size is not None:
+            image_transforms = v2.Resize(
+                (config.image_size, config.image_size), antialias=True
+            )
+
+        full_dataset = LeRobotDataset(
+            config.repo_id,
+            delta_timestamps=deltas,
+            image_transforms=image_transforms,
+            video_backend="torchcodec",
+        )
+
+        if not (0 <= episode_index < full_dataset.num_episodes):
+            raise ValueError(
+                f"episode_index={episode_index} out of range "
+                f"[0, {full_dataset.num_episodes})"
+            )
+
+        episode_indices = np.array(full_dataset.hf_dataset["episode_index"])
+        episode_frame_indices = np.flatnonzero(episode_indices == episode_index)
+
+        if frame_index is None:
+            chosen_indices = episode_frame_indices.tolist()
+        else:
+            if not (0 <= frame_index < len(episode_frame_indices)):
+                raise ValueError(
+                    f"frame_index={frame_index} out of range for episode "
+                    f"{episode_index} ({len(episode_frame_indices)} frames)"
+                )
+            chosen_indices = [int(episode_frame_indices[frame_index])]
+
+        dataset = Subset(full_dataset, chosen_indices)
+        if config.use_language:
+            dataset = _LanguageKeyDataset(dataset)
+
+        return DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
+
 
 if __name__ == "__main__":
     # 1. Setup Device

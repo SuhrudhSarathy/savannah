@@ -10,3 +10,4 @@ checkpoints/
 outputs/
 *logs*/
 *.mp4
+*debug_outputs*/

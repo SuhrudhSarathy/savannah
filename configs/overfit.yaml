@@ -1,15 +1,18 @@
 defaults:
   - model: dit_cross_attn
-  - task: metaworld_assembly
+  - task: metaworld_button_press
   - augmentation: default
   - _self_
 
 overfit:
   batch_size: 1
   image_size: ${task.config.image_size}
+  episode_index: 0
+  frame_index: 1
   steps: 5000
   lr: 1.0e-4
-  log_every: 50
+  log_every: 1
+  ema_decay: 0.999
   loss_threshold: 0.01 # final loss must drop below this to count as a PASS
   action_mse_threshold: 0.05 # sampled-vs-ground-truth action MSE must drop below this to count as a PASS
   checkpoint_dir: checkpoints/overfit

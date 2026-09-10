@@ -22,7 +22,9 @@ from savannah.utils.log import setup_logging
 def main(cfg: DictConfig) -> None:
     """
     Sanity check #2: can the model overfit a single *real* batch from the
-    dataset?
+    dataset — one frame's obs/action window (overfit.frame_index=<int>), or
+    every frame of one episode cycled through one at a time, batch_size=1
+    (overfit.frame_index=null)?
 
     This exercises the full data pipeline (task.format_batch, normalization,
     image/state shapes) on top of the model — the natural next step once
@@ -35,9 +37,9 @@ def main(cfg: DictConfig) -> None:
 
     task = build_task(cfg, device=device)
     policy = build_policy(cfg).to(device)
-    train_loader = task.get_train_loader()
-    raw_batch = next(iter(train_loader))
-    batch = task.format_batch(raw_batch)
+    loader = task.get_episode_loader(cfg.overfit.episode_index, cfg.overfit.frame_index)
+    batches = [task.format_batch(raw_batch) for raw_batch in loader]
+    batch = batches if len(batches) > 1 else batches[0]
 
     cfg_t = task.config
     env_info = f"  env={cfg_t.env_name}" if cfg_t.env_name else ""
@@ -48,7 +50,15 @@ def main(cfg: DictConfig) -> None:
     )
 
     checkpoint_path = os.path.join(cfg.overfit.checkpoint_dir, "overfit_final.ckpt")
-    print(f"Overfitting on a single real batch for {cfg.overfit.steps} steps...")
+    frame_desc = (
+        f"cycling through {len(batch)} frames, batch_size=1 each"
+        if isinstance(batch, list)
+        else f"frame={cfg.overfit.frame_index}"
+    )
+    print(
+        f"Overfitting on episode={cfg.overfit.episode_index} ({frame_desc}) "
+        f"for {cfg.overfit.steps} steps..."
+    )
     losses = overfit_on_batch(
         policy,
         batch,
@@ -56,6 +66,9 @@ def main(cfg: DictConfig) -> None:
         lr=cfg.overfit.lr,
         log_every=cfg.overfit.log_every,
         checkpoint_path=checkpoint_path,
+        ema_decay=cfg.overfit.ema_decay,
+        episode_index=cfg.overfit.episode_index,
+        frame_index=cfg.overfit.frame_index,
     )
 
     print(f"\nLoss: {losses[0]:.6f} -> {losses[-1]:.6f}")
@@ -71,7 +84,12 @@ def main(cfg: DictConfig) -> None:
     print(
         "\nVal loop: sampling actions via compute_action and comparing to ground truth..."
     )
-    action_mse = validate_action_reconstruction(policy, batch)
+    if isinstance(batch, list):
+        action_mse = sum(
+            validate_action_reconstruction(policy, b) for b in batch
+        ) / len(batch)
+    else:
+        action_mse = validate_action_reconstruction(policy, batch)
     print(f"Action reconstruction MSE: {action_mse:.6f}")
     if action_mse < cfg.overfit.action_mse_threshold:
         print(

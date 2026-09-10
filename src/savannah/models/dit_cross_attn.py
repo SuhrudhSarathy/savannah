@@ -164,7 +164,7 @@ class DITCrossAttnPolicy(Policy):
         self.use_rope = use_rope
         self.use_spe = not self.use_rope
 
-        self.state_encoder = StateEncoder(self._state_dim, self.state_embed_dim)
+        self.state_encoder = StateEncoder(self._state_dim, self.embed_dim)
         self.language_encoder = language_encoder
         if language_encoder is not None:
             logger.debug("Initialised Language Encoder into the model")
@@ -172,10 +172,7 @@ class DITCrossAttnPolicy(Policy):
         self.n_state_tokens = num_obs
         self.n_time_tokens = 1
 
-        self.condition_dim = (
-            self.n_state_tokens * self.state_embed_dim
-            + self.n_time_tokens * self.time_embed_dim
-        )
+        self.condition_dim = self.n_time_tokens * self.time_embed_dim
 
         self.decoder = nn.ModuleList(
             [
@@ -215,8 +212,16 @@ class DITCrossAttnPolicy(Policy):
         # Action reprojection
         self.action_reprojection = nn.Linear(self.embed_dim, self._action_dim)
 
-        # Modality Embedding (for vision and language)
-        self.modality_embedding = nn.Embedding(2, self.embed_dim)
+        # Modality Embedding (for state, vision and language)
+        self.modality_embedding = nn.Embedding(3, self.embed_dim)
+        self.modality_embedding_map = {
+            ObservationKey.state: 0,
+            ObservationKey.images: 1,
+            ObservationKey.language: 2,
+        }
+
+        # Learnable position embeddings for kv_tokens
+        self.learnable_pos_embeddings = nn.Embedding(512, self.embed_dim)
 
     def forward(self, obs: dict[str, torch.Tensor], *args, **kwargs) -> PolicyOutput:
         x_img = obs[ObservationKey.images]
@@ -228,6 +233,7 @@ class DITCrossAttnPolicy(Policy):
             debug_stat(f"x_img[{cam_idx}] (raw)", img)
         debug_stat("x_state (raw)", x_state)
         debug_stat("x_time (raw)", x_time)
+
         if x_language is not None:
             logger.debug("x_language (raw) {}", x_language)
 
@@ -237,20 +243,39 @@ class DITCrossAttnPolicy(Policy):
             raise AssertionError("Pass noisy action for the model to run")
         debug_stat("noisy_actions (raw)", noisy_actions)
 
+        ## ---------------------- Vision Tokens ------------------------ ##
         # (B, T, embed_dim)
         x_cam_tokens = self.vision_encoder(x_img)
         debug_stat("x_cam_tokens", x_cam_tokens)
 
         # Apply Modality Embedding
         x_cam_modality = self.modality_embedding(
-            torch.zeros(1, dtype=torch.long, device=x_cam_tokens.device)
+            torch.tensor(
+                [self.modality_embedding_map[ObservationKey.images]],
+                dtype=torch.long,
+                device=x_cam_tokens.device,
+            )
         )  # (1, embed_dim)
         x_cam_tokens = x_cam_tokens + x_cam_modality
-        x_cam_tokens = x_cam_tokens + x_cam_modality
 
+        ## ------------------------------------------------------------- ##
+
+        ## ---------------------- State Tokens ------------------------ ##
         # (B, N, state_dim) -> (B, N, embedding_dim)
-        x_state = self.state_encoder(x_state)
-        debug_stat("x_state (embedded)", x_state)
+        x_state_tokens = self.state_encoder(x_state)
+        debug_stat("x_state (embedded)", x_state_tokens)
+        x_state_modality = self.modality_embedding(
+            torch.tensor(
+                [self.modality_embedding_map[ObservationKey.state]],
+                dtype=torch.long,
+                device=x_state_tokens.device,
+            )
+        )  # (1, embed_dim)
+        x_state_tokens = x_state_tokens + x_state_modality
+
+        ## ------------------------------------------------------------- ##
+
+        ## --------------------- Language Tokens ------------------------ ##
 
         if x_language is not None:
             if self.language_encoder is None:
@@ -259,14 +284,20 @@ class DITCrossAttnPolicy(Policy):
                 )
             else:
                 # (B, xx, embed_dim)
-                x_language = self.language_encoder(x_language)
-                debug_stat("x_lang", x_language)
+                x_language_tokens = self.language_encoder(x_language)
+                debug_stat("x_lang", x_language_tokens)
 
                 # Apply Modality Embedding
                 x_language_modality = self.modality_embedding(
-                    torch.tensor([1 for _ in range(x_language.shape[0])])
-                )
-                x_language = x_language + x_language_modality
+                    torch.tensor(
+                        [self.modality_embedding_map[ObservationKey.language]],
+                        dtype=torch.long,
+                        device=x_language_tokens.device,
+                    )
+                )  # (1, embed_dim)
+                x_language_tokens = x_language_tokens + x_language_modality
+
+        ## ------------------------------------------------------------- ##
 
         # (B,) -> (B, 1) optionally
         if len(x_time.shape) == 1:
@@ -285,22 +316,27 @@ class DITCrossAttnPolicy(Policy):
             x_noisy_actions = x_noisy_actions + self.action_time_embedding
             debug_stat("x_noisy_actions (+ pos embed)", x_noisy_actions)
 
-        x_vision_language_tokens = []
+        x_kv_tokens = []
         if x_language is None:
-            x_vision_language_tokens = torch.cat([x_cam_tokens], dim=1)
+            x_kv_tokens = torch.cat([x_cam_tokens, x_state_tokens], dim=1)
         else:
-            x_vision_language_tokens = torch.cat([x_language, x_cam_tokens], dim=1)
+            x_kv_tokens = torch.cat(
+                [x_language_tokens, x_cam_tokens, x_state_tokens], dim=1
+            )
 
-        x_state_tokens = rearrange(x_state, "b t d -> b (t d)")
-        x_time_tokens = rearrange(x_time, "b t d -> b (t d)")
+        # Add Position embeddings to the kv_tokens
+        positions = torch.arange(
+            x_kv_tokens.shape[1], dtype=torch.long, device=x_kv_tokens.device
+        )
+        pos_embeddings = self.learnable_pos_embeddings(positions)
+        x_kv_tokens = x_kv_tokens + pos_embeddings
 
-        x_cond_tokens_pooled = torch.cat([x_state_tokens, x_time_tokens], dim=-1)
-        x_cond_tokens_pooled = x_cond_tokens_pooled.unsqueeze(1)
-        debug_stat("x_cond_pooled", x_cond_tokens_pooled)
+        # Time tokens for AdaLN conditioning
+        x_time_tokens = rearrange(x_time, "b t d -> b 1 (t d)")
 
         x_dec_out = x_noisy_actions
         for dec in self.decoder:
-            x_dec_out = dec(x_dec_out, x_vision_language_tokens, x_cond_tokens_pooled)
+            x_dec_out = dec(x_dec_out, x_kv_tokens, x_time_tokens)
         debug_stat("x_dec_out", x_dec_out)
 
         x_action = self.action_reprojection(x_dec_out)

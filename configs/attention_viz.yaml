@@ -1,0 +1,19 @@
+defaults:
+  - model: dit_cross_attn
+  - task: metaworld_button_press
+  - augmentation: default
+  - _self_
+
+checkpoint_path: null # local checkpoint: pass via CLI: checkpoint_path=path/to/model.ckpt
+wandb_artifact: null # OR pull from W&B: wandb_artifact=savannah/flow_matching_pusht:best
+use_ema: true # load ema_state_dict instead of model_state_dict
+
+episode_index: null # which episode to visualize; null = reuse the episode the checkpoint was overfit on
+frame_index: null # which frame within that episode; null = reuse the checkpoint's frame (falls back to 0)
+denoise_step: -1 # which sampler step's attention to visualize (-1 = last / cleanest x_t)
+query_idx: null # null = average over the whole action horizon; else an int index into it
+head_idx: null # null = average over attention heads; else an int index into them
+block_idx: null # null = every decoder block; else an int index into decoder_num_blocks
+
+output_dir: ./debug_outputs/attention_viz
+log_level: INFO

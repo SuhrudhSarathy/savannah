@@ -33,6 +33,14 @@ class BaseRobotTask(ABC):
             self.get_train_loader()  # Forces creation of both
         return self._val_loader
 
+    def get_episode_loader(self, episode_index: int, frame_index: int | None = 0):
+        """One fixed frame (frame_index=int) or the whole episode
+        (frame_index=None) as a single batch — see
+        LerobotDatasetWrapper.get_episode_loader."""
+        return LerobotDatasetWrapper.get_episode_loader(
+            self.config, self.device, episode_index, frame_index
+        )
+
     @abstractmethod
     def format_batch(
         self, batch: Dict[str, Any], step: Optional[int] = None
