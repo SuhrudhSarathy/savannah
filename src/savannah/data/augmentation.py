@@ -48,6 +48,14 @@ class AugmentationConfig:
     # dropout-style regularizer applied throughout training.
     state_mask_prob: float = 0.0
 
+    # Probability of zeroing an entire camera's image (all obs_horizon
+    # timesteps) for a given sample, applied independently per camera and
+    # per sample. Forces the policy to fall back on the remaining cameras
+    # (and state), simulating camera dropout/occlusion. Like
+    # `state_mask_prob`, this is a constant dropout-style regularizer and
+    # does not decay with `decay_rate`.
+    camera_mask_prob: float = 0.0
+
 
 class ObservationAugmenter:
     """Train-time image/state augmentation with a shared decay schedule.
@@ -102,7 +110,20 @@ class ObservationAugmenter:
         x = self._color_jitter(x, B, N, step)
         x = self._speckle_noise(x, step)
 
-        return x.reshape(B, N, C, H, W).clamp(0.0, 1.0)
+        x = x.reshape(B, N, C, H, W).clamp(0.0, 1.0)
+        return self._mask_camera(x)
+
+    def _mask_camera(self, img: torch.Tensor) -> torch.Tensor:
+        """Zeroes out a sample's entire camera image (all obs_horizon
+        timesteps) with probability `camera_mask_prob`, independent per
+        sample (and independent across cameras, since this is called once
+        per camera tensor)."""
+        prob = self.config.camera_mask_prob
+        if prob <= 0:
+            return img
+        keep = torch.rand(img.shape[0], device=img.device) >= prob
+        mask = keep.to(img.dtype).view(-1, *([1] * (img.dim() - 1)))
+        return img * mask
 
     def _random_crop_resize(
         self, x: torch.Tensor, B: int, N: int, step: int
