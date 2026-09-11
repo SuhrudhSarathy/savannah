@@ -43,7 +43,12 @@ def main(cfg: DictConfig) -> None:
 
     cfg_t = task.config
     env_info = f"  env={cfg_t.env_name}" if cfg_t.env_name else ""
-    print(f"Policy : {policy.__class__.__name__}  ({policy.num_params():.2f}M params)")
+    breakdown = policy.param_breakdown()
+    print(
+        f"Policy : {policy.__class__.__name__}  "
+        f"({policy.num_params():.2f}M params, L-{breakdown['language']:.2f} "
+        f"V-{breakdown['vision']:.2f} O-{breakdown['other']:.2f})"
+    )
     print(f"Task   : {task.__class__.__name__}{env_info}  repo={cfg_t.repo_id}")
     print(
         f"         obs_horizon={cfg_t.obs_horizon}  action_horizon={cfg_t.action_horizon}  image_size={cfg_t.image_size}  cameras={cfg_t.cameras}"

@@ -25,7 +25,7 @@ normalization stats (`norm_stats.json`, z-scored mean/std).
 """
 
 import json
-from collections import deque
+from collections import OrderedDict, deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from savannah.utils.device import configure_mujoco_gl
@@ -39,7 +39,7 @@ import gymnasium as gym
 import numpy as np
 import torch
 from abc_bottle_gym.env import ACTION_HIGH, ACTION_LOW, DEFAULT_CAMERA_KEYS
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Sampler
 
 from savannah.tasks import BaseRobotTask
 from savannah.utils.observation import ObservationKey
@@ -117,14 +117,8 @@ def _read_state_action_rows(ep_dir: Path, start: int, end: int) -> np.ndarray:
     return np.frombuffer(raw, dtype=np.float64).reshape(-1, ROW_DIM)
 
 
-def _decode_frame(
-    ep_dir: Path,
-    idx: int,
-    episode_length: int,
-    source_cameras: Tuple[str, ...],
-    cameras: List[str],
-) -> Dict[str, torch.Tensor]:
-    """Decodes frame `idx` from the per-episode combined mp4 via torchcodec.
+def _open_decoder(ep_dir: Path, episode_length: int):
+    """Opens a torchcodec VideoDecoder for an episode's combined mp4.
 
     Uses a synthesized CFR frame map (pts = 512*k, 1/15360 timebase) instead
     of per-file probing, matching abc's `train_loop.decode_frame`.
@@ -136,10 +130,14 @@ def _decode_frame(
         for i in range(episode_length)
     ]
     mapping = json.dumps({"frames": frames})
-    decoder = VideoDecoder(
+    return VideoDecoder(
         str(ep_dir / "combined_camera-images-rgb.mp4"), custom_frame_mappings=mapping
     )
-    frame = decoder[idx]  # (C, n_cams * H, W) uint8
+
+
+def _split_cameras(
+    frame: torch.Tensor, source_cameras: Tuple[str, ...], cameras: List[str]
+) -> Dict[str, torch.Tensor]:
     n_cams = len(source_cameras)
     h = frame.shape[1] // n_cams
     stacked = {
@@ -158,6 +156,24 @@ class ABCEpisodeDataset(Dataset):
     in this package.
     """
 
+    # Max number of open per-episode video decoders to keep alive at once
+    # (per worker process). Episodes' mp4s have very sparse keyframes, so a
+    # decoder that gets reused for its next (nearby/ascending) frame decodes
+    # ~25-40x faster than one constructed fresh each call -- see
+    # `_cached_decoder`. Bounded so memory/file-handle usage doesn't grow
+    # unbounded on datasets with many episodes.
+    _DECODER_CACHE_SIZE = 8
+
+    # Raw decoded-frame cache (per worker), keyed by (episode_dir, frame
+    # idx). Consecutive samples' obs-horizon windows overlap by
+    # obs_horizon - 1 frames (item k wants frame k, item k+1 wants frames
+    # k, k+1, ...), and re-requesting a frame the decoder already passed
+    # counts as a backward seek -- exactly as expensive as a random one.
+    # Caching recently decoded frames means each new sample only ever
+    # decodes the one genuinely new frame, keeping the decoder moving
+    # strictly forward.
+    _FRAME_CACHE_SIZE = 64
+
     def __init__(
         self,
         root: str,
@@ -175,9 +191,36 @@ class ABCEpisodeDataset(Dataset):
             self.episodes = self.episodes[:max_episodes]
         self.norm_stats = _load_norm_stats(self.root)
         self.cum = np.cumsum([usable for _, _, usable, _, _ in self.episodes])
+        # Populated lazily per worker process; not shared across workers.
+        self._decoder_cache: "OrderedDict[Path, Any]" = OrderedDict()
+        self._frame_cache: "OrderedDict[Tuple[Path, int], torch.Tensor]" = OrderedDict()
 
     def __len__(self) -> int:
         return int(self.cum[-1])
+
+    def _cached_decoder(self, ep_dir: Path, episode_length: int):
+        decoder = self._decoder_cache.get(ep_dir)
+        if decoder is None:
+            if len(self._decoder_cache) >= self._DECODER_CACHE_SIZE:
+                self._decoder_cache.popitem(last=False)
+            decoder = _open_decoder(ep_dir, episode_length)
+            self._decoder_cache[ep_dir] = decoder
+        else:
+            self._decoder_cache.move_to_end(ep_dir)
+        return decoder
+
+    def _get_frame(self, ep_dir: Path, idx: int, episode_length: int) -> torch.Tensor:
+        key = (ep_dir, idx)
+        frame = self._frame_cache.get(key)
+        if frame is None:
+            decoder = self._cached_decoder(ep_dir, episode_length)
+            frame = decoder[idx]  # (C, n_cams * H, W) uint8
+            if len(self._frame_cache) >= self._FRAME_CACHE_SIZE:
+                self._frame_cache.popitem(last=False)
+            self._frame_cache[key] = frame
+        else:
+            self._frame_cache.move_to_end(key)
+        return frame
 
     def __getitem__(self, global_idx: int) -> dict:
         ep_idx = int(np.searchsorted(self.cum, global_idx, side="right"))
@@ -185,30 +228,30 @@ class ABCEpisodeDataset(Dataset):
         k = global_idx - offset
         ep_dir, length, _, source_cameras, prompt = self.episodes[ep_idx]
 
-        rows = _read_state_action_rows(ep_dir, k, k + self.action_horizon)
-        actions = _normalize(rows[:, STATE_DIM:], self.norm_stats["actions"]).astype(
-            np.float32
-        )
-
         # Observation window of obs_horizon frames ending at k, oldest first.
         # Left-pad by repeating frame 0 when k is near the episode start --
         # same convention as preprocess_observation_history at eval time.
         obs_indices = [
             max(0, k - self.obs_horizon + 1 + i) for i in range(self.obs_horizon)
         ]
-        state_rows = np.stack(
-            [
-                rows[0, :STATE_DIM]
-                if idx == k
-                else _read_state_action_rows(ep_dir, idx, idx + 1)[0, :STATE_DIM]
-                for idx in obs_indices
-            ]
-        )
+        start = obs_indices[0]
+
+        # Single contiguous read covering both the obs-horizon state window
+        # and the action chunk (one file open instead of one per frame).
+        rows = _read_state_action_rows(ep_dir, start, k + self.action_horizon)
+        actions = _normalize(
+            rows[k - start : k - start + self.action_horizon, STATE_DIM:],
+            self.norm_stats["actions"],
+        ).astype(np.float32)
+        state_rows = np.stack([rows[idx - start, :STATE_DIM] for idx in obs_indices])
         state = _normalize(state_rows, self.norm_stats["state"]).astype(
             np.float32
         )  # (T, 14)
+
         frames = [
-            _decode_frame(ep_dir, idx, length, source_cameras, self.cameras)
+            _split_cameras(
+                self._get_frame(ep_dir, idx, length), source_cameras, self.cameras
+            )
             for idx in obs_indices
         ]
 
@@ -222,6 +265,41 @@ class ABCEpisodeDataset(Dataset):
                 [frame[cam] for frame in frames]
             )  # (T, C, H, W)
         return item
+
+
+class _EpisodeChunkSampler(Sampler[int]):
+    """Shuffles training samples in contiguous per-episode chunks instead of
+    individually.
+
+    ABC episode mp4s have very sparse keyframes (often ~2 for a whole
+    ~700-frame episode), so torchcodec has to replay forward from the
+    nearest keyframe on every random-access decode -- ~25-40x slower than
+    the next frame on an already-open, already-positioned decoder (see
+    `ABCEpisodeDataset._cached_decoder`). Fully random per-sample shuffling
+    means every `__getitem__` call pays that seek cost. Shuffling
+    `chunk_size`-frame chunks instead keeps consecutive samples within a
+    chunk sequential (cheap to decode) while chunk order -- and so overall
+    training order -- is still reshuffled every epoch.
+    """
+
+    def __init__(self, dataset: "ABCEpisodeDataset", chunk_size: int):
+        self.dataset = dataset
+        self.chunk_size = chunk_size
+
+    def __iter__(self):
+        chunks = []
+        offset = 0
+        for _, _, usable, _, _ in self.dataset.episodes:
+            for start in range(0, usable, self.chunk_size):
+                end = min(start + self.chunk_size, usable)
+                chunks.append((offset + start, offset + end))
+            offset += usable
+        for ci in torch.randperm(len(chunks)).tolist():
+            start, end = chunks[ci]
+            yield from range(start, end)
+
+    def __len__(self) -> int:
+        return len(self.dataset)
 
 
 class ABCPutBottlesTask(BaseRobotTask):
@@ -309,10 +387,14 @@ class ABCPutBottlesTask(BaseRobotTask):
             loader_kwargs["persistent_workers"] = True
             loader_kwargs["prefetch_factor"] = 4
 
+        # Chunk size trades off decode locality (bigger -> fewer, cheaper
+        # seeks) against per-batch diversity (bigger -> each batch drawn
+        # from fewer episodes/positions). 16 keeps a batch_size=32 batch
+        # spanning ~2 chunks while still cutting seek frequency ~16x.
         train_loader = DataLoader(
             train_dataset,
             batch_size=self.config.batch_size,
-            shuffle=True,
+            sampler=_EpisodeChunkSampler(train_dataset, chunk_size=16),
             num_workers=self.config.num_workers,
             pin_memory=self.device.type == "cuda",
             **loader_kwargs,

@@ -36,7 +36,14 @@ def main(cfg: DictConfig) -> None:
     task = build_task(cfg, device=device)
     policy = build_policy(cfg).to(device)
 
-    logger.info("Policy params: {:,}", policy.num_params())
+    breakdown = policy.param_breakdown()
+    logger.info(
+        "Policy params: {:.1f}M (L-{:.1f}, V-{:.1f}, {:.1f})M",
+        policy.num_params(),
+        breakdown["language"],
+        breakdown["vision"],
+        breakdown["other"],
+    )
 
     train_config = TrainConfig(**cfg.trainer)
     exp_logger = ExperimentLogger(
