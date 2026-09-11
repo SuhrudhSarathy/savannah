@@ -14,6 +14,7 @@ from savannah.trainer.scheduler import get_custom_scheduler
 from savannah.utils.eval_and_log import evaluate_and_log
 from savannah.utils.log import logger
 from savannah.utils.logger import ExperimentLogger
+from savannah.utils.observation import ObservationKey
 
 
 @dataclass
@@ -232,23 +233,39 @@ class PolicyTrainer:
             ):
                 logger.info("── Validating at step {} ──", self.global_step)
                 val_losses = []
+                reconstruction_losses = []
                 with torch.no_grad():
                     for batch in tqdm(val_loader):
                         batch = self.task.format_batch(batch)
                         loss = self.policy.compute_loss(batch)
+                        out = self.policy.compute_action(batch).actions
 
+                        reconstruction_loss = torch.norm(
+                            batch[ObservationKey.gt_actions] - out, dim=-1
+                        ).mean()
+
+                        reconstruction_losses.append(reconstruction_loss.item())
                         val_losses.append(loss.item())
 
                 avg_val_loss = torch.as_tensor(val_losses).mean().item()
-
-                self.logger.log_scalars(
-                    {"val/loss": avg_val_loss}, step=self.global_step
+                avg_reconstruction_loss = (
+                    torch.as_tensor(reconstruction_losses).mean().item()
                 )
 
-                self.save_checkpoint("latest", avg_val_loss)
-                if avg_val_loss < self.best_val_loss:
-                    self.best_val_loss = avg_val_loss
-                    self.save_checkpoint("best_model", avg_val_loss)
+                self.logger.log_scalars(
+                    {
+                        "val/loss": avg_val_loss,
+                        "val/reconstruction_loss": avg_reconstruction_loss,
+                    },
+                    step=self.global_step,
+                )
+
+                logger.info("Reconstruction Loss: {:.6f}", avg_reconstruction_loss)
+                self.save_checkpoint("latest", avg_reconstruction_loss)
+
+                if avg_reconstruction_loss < self.best_val_loss:
+                    self.best_val_loss = avg_reconstruction_loss
+                    self.save_checkpoint("best_model", avg_reconstruction_loss)
                     logger.success("New best val loss: {:.6f}", self.best_val_loss)
 
             # 8. Live sim eval & video upload (own cadence — typically much rarer

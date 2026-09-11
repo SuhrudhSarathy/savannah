@@ -8,8 +8,8 @@ overfit:
   batch_size: 1
   image_size: ${task.config.image_size}
   episode_index: 0
-  frame_index: 1
-  steps: 5000
+  frame_index: null
+  steps: 10000
   lr: 1.0e-4
   log_every: 1
   ema_decay: 0.999

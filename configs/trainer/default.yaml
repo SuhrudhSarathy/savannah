@@ -5,7 +5,7 @@ train:
   training_steps: 75000
   warmup_steps: 1000
   schedule: cosine
-  gradient_accumulation_steps: 4
+  gradient_accumulation_steps: 1
   ema_decay: 0.9999
 
 eval:

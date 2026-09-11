@@ -1,6 +1,6 @@
 defaults:
   - model: dit_cross_attn
-  - task: metaworld_button_press
+  - task: metaworld_disassemble
   - augmentation: default
   - _self_
 
