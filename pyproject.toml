@@ -21,13 +21,13 @@ dependencies = [
     "matplotlib",
     "lerobot==0.5.1",
     "metaworld @ git+https://github.com/SuhrudhSarathy/Metaworld.git@dev/multi-env",
-    "abc-bottle-gym @ git+https://github.com/SuhrudhSarathy/abc_bottle_gym.git@5ed6b90632b485002cd2e1d15ff4c6369f4be5ad",
     "gym-pusht",
     "pymunk==6.11.1",
     "loguru",
     "mani-skill>=3.0.1",
     "pin; sys_platform == 'darwin'",
     "pre-commit>=4.5.1",
+    "abc-bottle-gym",
 ]
 
 [project.optional-dependencies]
@@ -59,6 +59,9 @@ conflicts = [
         { extra = "cu130" },
     ],
 ]
+override-dependencies = [
+    "mujoco>=3.3.7",
+]
 
 [[tool.uv.index]]
 name = "pytorch-cu126"
@@ -79,6 +82,7 @@ torchvision = [
     { index = "pytorch-cu126", extra = "cu126" },
     { index = "pytorch-cu130", extra = "cu130" },
 ]
+abc-bottle-gym = { git = "https://github.com/SuhrudhSarathy/abc_bottle_gym.git" }
 
 [tool.ruff]
 line-length = 88
