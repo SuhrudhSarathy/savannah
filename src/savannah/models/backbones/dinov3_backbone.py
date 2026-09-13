@@ -3,8 +3,8 @@ from einops import rearrange
 from transformers import AutoModel, AutoProcessor
 
 from savannah.models.backbones import VisionFeatureExtractor
-from savannah.models.backbones.token_learner import TokenLearner
 from savannah.nn.positional_embeddings import SinusoidalPositionalEncoding2D
+from savannah.nn.token_learner import TokenLearner
 from savannah.utils.debug import debug_stat
 
 
@@ -52,7 +52,9 @@ class DinoV3Backbone(VisionFeatureExtractor):
 
             if reduce:
                 self.token_learner = TokenLearner(
-                    self.model_output_dim, reduced_tokens, 8
+                    embed_dim=self.model_output_dim,
+                    num_queries=reduced_tokens,
+                    hidden=8,
                 )
                 self._tokens_per_image = reduced_tokens
 

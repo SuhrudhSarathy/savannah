@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from savannah.models.backbones.clip_backbone import CLIPBackbone
-from savannah.models.backbones.token_learner import TokenLearner
+from savannah.nn.token_learner import TokenLearner
 
 B = 2
 IMAGE_SIZE = 224

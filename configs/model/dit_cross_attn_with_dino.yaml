@@ -24,6 +24,10 @@ vision_encoder:
   embed_dim: ${model.embed_dim}
   num_cameras: ${model.num_cameras}
   num_obs: ${model.num_obs}
+  num_query_tokens: 12
+  resampler_type: "perceiver"
+  resampler_heads: 8
+  resampler_depth: 1
   backbone:
     _target_: savannah.models.backbones.dinov3_backbone.DinoV3Backbone
     image_size: ${task.config.image_size}

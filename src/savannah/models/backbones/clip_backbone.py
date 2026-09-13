@@ -3,8 +3,8 @@ import torch.nn as nn
 from transformers import AutoProcessor, CLIPVisionModel
 
 from savannah.models.backbones import VisionFeatureExtractor
-from savannah.models.backbones.token_learner import TokenLearner
 from savannah.nn.positional_embeddings import SinusoidalPositionalEncoding
+from savannah.nn.token_learner import TokenLearner
 from savannah.utils.debug import debug_stat
 from savannah.utils.log import logger
 
@@ -57,7 +57,9 @@ class CLIPBackbone(VisionFeatureExtractor):
             )
 
             if reduce:
-                self.token_learner = TokenLearner(self.clip_dim, reduced_tokens, 8)
+                self.token_learner = TokenLearner(
+                    embed_dim=self.clip_dim, num_queries=reduced_tokens, hidden=8
+                )
                 self._tokens_per_image = reduced_tokens
 
     @property
