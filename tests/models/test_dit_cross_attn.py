@@ -193,12 +193,11 @@ def test_spe_path_uses_sinusoidal_action_embedding(policy_spe):
 
 
 def test_condition_dim_excludes_vision_and_language(policy):
-    # Unlike LBM, cross-attention keeps vision/language tokens as KV inputs
-    # to the decoder rather than folding them into the pooled AdaLN
-    # condition vector, so condition_dim is state+time only.
-    n_state = NUM_OBS
+    # Unlike LBM, cross-attention keeps vision/state/language tokens as KV
+    # inputs to the decoder rather than folding them into the pooled AdaLN
+    # condition vector, so condition_dim is time only.
     n_time = 1
-    expected_condition_dim = n_state * STATE_EMBED_DIM + n_time * TIME_EMBED_DIM
+    expected_condition_dim = n_time * TIME_EMBED_DIM
 
     assert policy.condition_dim == expected_condition_dim
     assert policy.decoder[0].adaln_block[-1].in_features == expected_condition_dim

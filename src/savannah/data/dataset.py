@@ -20,6 +20,13 @@ class DataSetConfig:
     env_name: Optional[str] = None
     cameras: List[str] = field(default_factory=list)
 
+    # Which on-disk/on-hub layout to read from. "native" reads a task's own
+    # bespoke local cache format (e.g. ABCPutBottlesTask's flat per-episode
+    # dirs under `root`); "lerobot" reads a standard LeRobotDataset from the
+    # Hub via `repo_id`. Only honored by tasks that support both (currently
+    # ABCPutBottlesTask) -- ignored otherwise.
+    data_source: str = "native"
+
     # Temporal horizons
     obs_horizon: int = 1
     action_horizon: int = 10

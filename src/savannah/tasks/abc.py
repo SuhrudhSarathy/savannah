@@ -41,6 +41,7 @@ import torch
 from abc_bottle_gym.env import ACTION_HIGH, ACTION_LOW, DEFAULT_CAMERA_KEYS
 from torch.utils.data import DataLoader, Dataset, Sampler
 
+from savannah.data.dataset import LerobotDatasetWrapper
 from savannah.tasks import BaseRobotTask
 from savannah.utils.observation import ObservationKey
 
@@ -73,6 +74,44 @@ def _normalize(x: np.ndarray, stats: Dict[str, np.ndarray]) -> np.ndarray:
 
 def _unnormalize(x: np.ndarray, stats: Dict[str, np.ndarray]) -> np.ndarray:
     return x * (stats["std"] + 1e-6) + stats["mean"]
+
+
+def _normalize_tensor(x: torch.Tensor, stats: Dict[str, np.ndarray]) -> torch.Tensor:
+    mean = torch.as_tensor(stats["mean"], device=x.device, dtype=x.dtype)
+    std = torch.as_tensor(stats["std"], device=x.device, dtype=x.dtype)
+    return (x - mean) / (std + 1e-6)
+
+
+def _load_lerobot_meta(repo_id: str):
+    """Loads a hub LeRobotDataset's metadata only (no video/parquet download).
+
+    Used as the "lerobot" counterpart of `_load_norm_stats`/`_scan_episodes`:
+    a converted dataset (see `scripts/data/convert_abc_to_lerobot.py`) stores
+    raw, unnormalized state/action values plus its own auto-computed
+    `meta/stats.json`, so norm stats and the language prompt are read from
+    there instead of abc's `norm_stats.json` sidecar / episode metadata.
+    """
+    from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
+
+    return LeRobotDatasetMetadata(repo_id)
+
+
+def _lerobot_norm_stats(repo_id: str) -> Dict[str, Dict[str, np.ndarray]]:
+    stats = _load_lerobot_meta(repo_id).stats
+    return {
+        "state": {
+            "mean": np.asarray(stats["observation.state"]["mean"], dtype=np.float32),
+            "std": np.asarray(stats["observation.state"]["std"], dtype=np.float32),
+        },
+        "actions": {
+            "mean": np.asarray(stats["action"]["mean"], dtype=np.float32),
+            "std": np.asarray(stats["action"]["std"], dtype=np.float32),
+        },
+    }
+
+
+def _lerobot_prompt(repo_id: str) -> str:
+    return str(_load_lerobot_meta(repo_id).tasks.index[0])
 
 
 def _scan_episodes(
@@ -305,15 +344,25 @@ class _EpisodeChunkSampler(Sampler[int]):
 class ABCPutBottlesTask(BaseRobotTask):
     """Reads ABC's put-bottles-in-bin data (real or sim split) for training.
 
-    `config.root` must point at a split directory produced by abc's
-    `prepare.py` / `export_hf_task.py`, e.g. `<ABC_CACHE>/train_real`. The
-    matching validation split is assumed to sit alongside it with the first
-    `train` replaced by `val` (`train_real` -> `val_real`, `train_sim` ->
-    `val_sim`), matching abc's cache layout. `config.root` is also used at
-    eval time to locate `norm_stats.json` (one level up) and to derive the
-    language prompt from the training episodes' own metadata, so both
-    state/action normalization and language conditioning are identical
-    between training and rollout.
+    `config.data_source` selects which layout is read:
+
+    - "native" (default): `config.root` must point at a split directory
+      produced by abc's `prepare.py` / `export_hf_task.py`, e.g.
+      `<ABC_CACHE>/train_real`. The matching validation split is assumed to
+      sit alongside it with the first `train` replaced by `val`
+      (`train_real` -> `val_real`, `train_sim` -> `val_sim`), matching abc's
+      cache layout. `config.root` is also used at eval time to locate
+      `norm_stats.json` (one level up) and to derive the language prompt
+      from the training episodes' own metadata.
+    - "lerobot": `config.repo_id` must point at a LeRobot dataset pushed to
+      the HF Hub by `scripts/data/convert_abc_to_lerobot.py` (e.g.
+      "suhrudhsarathy/abc-put-bottle"), which stores raw (unnormalized)
+      state/action values. Norm stats and the language prompt are instead
+      read from that dataset's own auto-computed `meta/stats.json` and
+      `meta/tasks`.
+
+    Either way, state/action normalization and language conditioning are
+    identical between training and rollout.
     """
 
     def __init__(self, config, device: torch.device):
@@ -323,32 +372,48 @@ class ABCPutBottlesTask(BaseRobotTask):
 
     def _get_norm_stats(self) -> Dict[str, Dict[str, np.ndarray]]:
         if self._norm_stats is None:
-            if not self.config.root:
-                raise ValueError(
-                    "ABCPutBottlesTask requires config.root to be set (used to "
-                    "locate norm_stats.json for state/action normalization)"
-                )
-            self._norm_stats = _load_norm_stats(Path(self.config.root))
+            if self.config.data_source == "lerobot":
+                if not self.config.repo_id:
+                    raise ValueError(
+                        "ABCPutBottlesTask with data_source='lerobot' requires "
+                        "config.repo_id to be set"
+                    )
+                self._norm_stats = _lerobot_norm_stats(self.config.repo_id)
+            else:
+                if not self.config.root:
+                    raise ValueError(
+                        "ABCPutBottlesTask requires config.root to be set (used to "
+                        "locate norm_stats.json for state/action normalization)"
+                    )
+                self._norm_stats = _load_norm_stats(Path(self.config.root))
         return self._norm_stats
 
     def _get_prompt(self) -> str:
         """The language instruction used for eval-time conditioning.
 
-        Read from the training split's own episode metadata (same field
-        `ABCEpisodeDataset` uses for `item["task"]`), so eval always matches
-        whatever language the policy was actually trained on -- no separate
-        hardcoded prompt to drift out of sync.
+        Read from the training data's own metadata (same field
+        `ABCEpisodeDataset`/`LeRobotDataset` uses for `item["task"]`), so
+        eval always matches whatever language the policy was actually
+        trained on -- no separate hardcoded prompt to drift out of sync.
         """
         if self._prompt is None:
-            if not self.config.root:
-                raise ValueError(
-                    "ABCPutBottlesTask requires config.root to be set (used to "
-                    "derive the eval-time language prompt from training episodes)"
+            if self.config.data_source == "lerobot":
+                if not self.config.repo_id:
+                    raise ValueError(
+                        "ABCPutBottlesTask with data_source='lerobot' requires "
+                        "config.repo_id to be set"
+                    )
+                self._prompt = _lerobot_prompt(self.config.repo_id)
+            else:
+                if not self.config.root:
+                    raise ValueError(
+                        "ABCPutBottlesTask requires config.root to be set (used to "
+                        "derive the eval-time language prompt from training episodes)"
+                    )
+                episodes = _scan_episodes(
+                    Path(self.config.root), self.config.action_horizon
                 )
-            episodes = _scan_episodes(
-                Path(self.config.root), self.config.action_horizon
-            )
-            self._prompt = episodes[0][-1]
+                self._prompt = episodes[0][-1]
         return self._prompt
 
     def get_train_loader(self) -> DataLoader:
@@ -362,6 +427,17 @@ class ABCPutBottlesTask(BaseRobotTask):
         return self._val_loader
 
     def _create_loaders(self) -> Tuple[DataLoader, DataLoader]:
+        if self.config.data_source == "lerobot":
+            if not self.config.repo_id:
+                raise ValueError(
+                    "ABCPutBottlesTask with data_source='lerobot' requires "
+                    "config.repo_id to be set"
+                )
+            # Same delta_timestamps/camera-resize/language/train-val-split
+            # machinery the other (non-ABC) tasks use for LeRobot datasets --
+            # state/action come back raw, normalized in format_batch below.
+            return LerobotDatasetWrapper.create_loaders(self.config, self.device)
+
         if not self.config.root:
             raise ValueError("ABCPutBottlesTask requires config.root to be set")
 
@@ -414,6 +490,14 @@ class ABCPutBottlesTask(BaseRobotTask):
     ) -> Dict[str, torch.Tensor]:
         state = batch["observation.state"].to(self.device)  # (B, obs_horizon, D)
         actions = batch["action"].to(self.device)  # (B, action_horizon, D)
+
+        if self.config.data_source == "lerobot":
+            # Unlike the native ABCEpisodeDataset (which normalizes in
+            # __getitem__), a LeRobot hub dataset stores raw values -- see
+            # `_get_norm_stats`.
+            stats = self._get_norm_stats()
+            state = _normalize_tensor(state, stats["state"])
+            actions = _normalize_tensor(actions, stats["actions"])
 
         images = [
             batch[f"observation.images.{cam}"].to(

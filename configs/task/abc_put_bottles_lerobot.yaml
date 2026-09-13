@@ -1,9 +1,9 @@
 _target_: savannah.tasks.abc.ABCPutBottlesTask
 config:
   _target_: savannah.data.dataset.DataSetConfig
-  data_source: native
-  repo_id: abc/put_bottles
-  root: /mnt/shared/abc/train_sim
+  data_source: lerobot
+  repo_id: suhrudhsarathy/abc-put-bottle
+  root: null
   fps: 30
   cameras: ["top", "left", "right"]
   image_size: 224 # matches abc's own DINO pipeline (resize_with_pad to 224x224)
@@ -11,6 +11,5 @@ config:
   action_horizon: ${model.action_horizon}
   batch_size: 32
   num_workers: 4
-  val_episodes: 5
   use_language: false
   augmentation: ${augmentation}

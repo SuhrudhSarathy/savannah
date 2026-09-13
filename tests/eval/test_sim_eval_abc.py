@@ -1,0 +1,78 @@
+"""Smoke test for evaluate_and_log (the live sim-eval loop the trainer runs
+periodically during training) on the ABC put-bottles-in-bin task. Not testing
+model quality — only that the rollout loop runs to completion without
+crashing.
+
+Uses data_source="lerobot" (config.repo_id, no local root/norm_stats.json
+needed) purely to get norm stats + the language prompt for
+preprocess_observation(_history)/postprocess_action — get_env() itself
+never touches the dataset.
+"""
+
+import gymnasium as gym
+import pytest
+from policy_helpers import build_tiny_policy
+
+from savannah.data.dataset import DataSetConfig
+from savannah.tasks.abc import ABCPutBottlesTask
+from savannah.utils.device import get_device
+from savannah.utils.eval_and_log import evaluate_and_log
+from savannah.utils.log import setup_logging
+from savannah.utils.logger import ExperimentLogger
+
+setup_logging(level="WARNING")
+
+ACTION_HORIZON = 4
+STATE_DIM = 14
+ACTION_DIM = 14
+NUM_CAMERAS = 3
+
+# Cap episode length so the smoke test stays fast (PutBottlesInBin-v0 is
+# registered with max_episode_steps=None). We only care that the loop
+# doesn't crash.
+MAX_EPISODE_STEPS = 12
+
+
+def test_sim_eval_loop_does_not_crash():
+    device = get_device()
+
+    config = DataSetConfig(
+        data_source="lerobot",
+        repo_id="suhrudhsarathy/abc-put-bottle",
+        fps=30,
+        cameras=["top", "left", "right"],
+        obs_horizon=1,
+        action_horizon=ACTION_HORIZON,
+        image_size=64,
+    )
+    task = ABCPutBottlesTask(config=config, device=device)
+
+    base_env = task.get_env(render_mode="rgb_array")
+    task._env = gym.wrappers.TimeLimit(base_env, max_episode_steps=MAX_EPISODE_STEPS)
+
+    policy = build_tiny_policy(
+        state_dim=STATE_DIM,
+        action_dim=ACTION_DIM,
+        action_horizon=ACTION_HORIZON,
+        num_cameras=NUM_CAMERAS,
+        device=device,
+    )
+    logger = ExperimentLogger(project_name="test", config={}, enable_logging=False)
+
+    success_rate, mean_reward = evaluate_and_log(
+        policy=policy,
+        task=task,
+        logger=logger,
+        step=0,
+        num_episodes=1,
+        execute_steps=4,
+    )
+
+    assert 0.0 <= success_rate <= 1.0
+    assert mean_reward == mean_reward  # not NaN
+
+    task.get_env().close()
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v", "-s"])
