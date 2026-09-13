@@ -2,12 +2,10 @@ import pytest
 import torch
 
 from savannah.models.backbones.clip_backbone import CLIPBackbone
-from savannah.nn.token_learner import TokenLearner
 
 B = 2
 IMAGE_SIZE = 224
 BASE_MODEL = "openai/clip-vit-base-patch32"
-REDUCED_TOKENS = 4
 
 
 @pytest.fixture
@@ -77,50 +75,6 @@ def test_different_input_resolutions(backbone):
         assert out.shape == (B, 1, backbone.out_channels), f"Failed at resolution {res}"
 
 
-def test_reduce_builds_token_learner():
-    backbone = CLIPBackbone(
-        image_size=IMAGE_SIZE,
-        base_model=BASE_MODEL,
-        use_eos_only=False,
-        reduce=True,
-        reduced_tokens=REDUCED_TOKENS,
-    )
-    assert isinstance(backbone.token_learner, TokenLearner)
-    assert backbone.tokens_per_image == REDUCED_TOKENS
-
-
-def test_reduce_output_shape():
-    backbone = CLIPBackbone(
-        image_size=IMAGE_SIZE,
-        base_model=BASE_MODEL,
-        trainable=False,
-        use_eos_only=False,
-        reduce=True,
-        reduced_tokens=REDUCED_TOKENS,
-    )
-    x = torch.randn(B, 3, IMAGE_SIZE, IMAGE_SIZE)
-    out = backbone(x)
-    assert out.shape == (B, REDUCED_TOKENS, backbone.out_channels)
-
-
-def test_reduce_has_no_effect_when_eos_only():
-    # token_learner is only built/used in the non-eos branch.
-    backbone = CLIPBackbone(
-        image_size=IMAGE_SIZE,
-        base_model=BASE_MODEL,
-        trainable=False,
-        use_eos_only=True,
-        reduce=True,
-        reduced_tokens=REDUCED_TOKENS,
-    )
-    assert not hasattr(backbone, "token_learner")
-    assert backbone.tokens_per_image == 1
-
-    x = torch.randn(B, 3, IMAGE_SIZE, IMAGE_SIZE)
-    out = backbone(x)
-    assert out.shape == (B, 1, backbone.out_channels)
-
-
 def test_distinguishes_solid_color_images(backbone):
     # Regression test: dataset images are float32 in [0, 1] (see
     # savannah/data/dataset.py), but CLIPImageProcessor defaults to
@@ -142,27 +96,3 @@ def test_distinguishes_solid_color_images(backbone):
         red_features.flatten(1), blue_features.flatten(1)
     ).item()
     assert cos_sim < 0.98
-
-
-def test_reduce_gradient_flows():
-    backbone = CLIPBackbone(
-        image_size=IMAGE_SIZE,
-        base_model=BASE_MODEL,
-        trainable=False,
-        use_eos_only=False,
-        reduce=True,
-        reduced_tokens=REDUCED_TOKENS,
-    )
-    x = torch.randn(B, 3, IMAGE_SIZE, IMAGE_SIZE)
-    out = backbone(x)
-    loss = out.pow(2).mean()
-    loss.backward()
-
-    for p in backbone.token_learner.parameters():
-        assert p.grad is not None
-        assert p.grad.abs().sum() > 0
-
-    # The frozen CLIP encoder is run under torch.no_grad(), so none of its
-    # parameters should have accumulated gradients.
-    for p in backbone.model.parameters():
-        assert p.grad is None

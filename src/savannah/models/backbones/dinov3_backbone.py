@@ -4,7 +4,6 @@ from transformers import AutoModel, AutoProcessor
 
 from savannah.models.backbones import VisionFeatureExtractor
 from savannah.nn.positional_embeddings import SinusoidalPositionalEncoding2D
-from savannah.nn.token_learner import TokenLearner
 from savannah.utils.debug import debug_stat
 
 
@@ -15,15 +14,11 @@ class DinoV3Backbone(VisionFeatureExtractor):
         base_model: str = "facebook/dinov3-vits16-pretrain-lvd1689m",
         use_eos_only: bool = True,
         trainable: bool = True,
-        reduce: bool = False,
-        reduced_tokens: int = 4,
     ):
         super().__init__()
 
         self.base_model = base_model
         self.use_eos_only = use_eos_only
-        self.reduce = reduce
-        self.reduced_tokens = reduced_tokens
 
         self.model = AutoModel.from_pretrained(self.base_model)
         self.processor = AutoProcessor.from_pretrained(self.base_model)
@@ -49,14 +44,6 @@ class DinoV3Backbone(VisionFeatureExtractor):
             self.sinusoidal_position_encoding_2d = SinusoidalPositionalEncoding2D(
                 self.model_output_dim
             )
-
-            if reduce:
-                self.token_learner = TokenLearner(
-                    embed_dim=self.model_output_dim,
-                    num_queries=reduced_tokens,
-                    hidden=8,
-                )
-                self._tokens_per_image = reduced_tokens
 
     @property
     def out_channels(self) -> int:
@@ -96,8 +83,6 @@ class DinoV3Backbone(VisionFeatureExtractor):
             patch_features_flat = rearrange(patch_features, "b c h w -> b (h w) c")
 
             features = torch.cat([cls_token, patch_features_flat], dim=1)
-            if self.reduce:
-                features = self.token_learner(features)
 
         return features
 
