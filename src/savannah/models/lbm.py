@@ -16,7 +16,7 @@ from savannah.utils.observation import ObservationKey
 from savannah.utils.policy import PolicyOutput
 
 
-class DiTBlock(nn.Module):
+class LBMBlock(nn.Module):
     def __init__(
         self,
         embed_dim: int,
@@ -45,10 +45,12 @@ class DiTBlock(nn.Module):
             nn.Linear(self.feedforward_dim, self.embed_dim),
         )
 
-        self.layer_norm1 = nn.LayerNorm(self.embed_dim)
-        self.layer_norm2 = nn.LayerNorm(self.embed_dim)
-
-        self.dropout_layer = nn.Dropout(self.dropout)
+        self.layer_norm1 = nn.LayerNorm(
+            self.embed_dim, elementwise_affine=False, eps=1e-6
+        )
+        self.layer_norm2 = nn.LayerNorm(
+            self.embed_dim, elementwise_affine=False, eps=1e-6
+        )
 
         self.adaln_block = nn.Sequential(
             nn.SiLU(), nn.Linear(self.cond_dim, 6 * self.embed_dim)
@@ -76,7 +78,7 @@ class DiTBlock(nn.Module):
 
         # Masked-Self Attention Block
         x_norm = self.layer_norm1(x)
-        x_pre_attn = gamma1 * x_norm + beta1
+        x_pre_attn = (1 + gamma1) * x_norm + beta1
         x_attn = self.attn_block(x_pre_attn)
         x_post_attn = alpha1 * x_attn
 
@@ -85,15 +87,12 @@ class DiTBlock(nn.Module):
 
         # FFN Block
         x_norm = self.layer_norm2(x)
-        x_pre_ffn = gamma2 * x_norm + beta2
+        x_pre_ffn = (1 + gamma2) * x_norm + beta2
         x_ffn = self.ffn_block(x_pre_ffn)
         x_post_ffn = alpha2 * x_ffn
 
         # Residual Connection
         x = x + x_post_ffn
-
-        # Dropout
-        x = self.dropout_layer(x)
 
         return x
 
@@ -107,7 +106,6 @@ class LBMPolicy(Policy):
         decoder_num_blocks: int,
         decoder_num_attn_heads: int,
         decoder_feedforward_dim: int,
-        decoder_dropout: float,
         state_dim: int,
         num_obs: int,
         action_dim: int,
@@ -120,31 +118,31 @@ class LBMPolicy(Policy):
     ):
         super().__init__()
 
-        self.embed_dim = embed_dim
-        self.time_embed_dim = time_embed_dim
-        self.state_embed_dim = state_embed_dim
-        self._state_dim = state_dim
-        self._action_dim = action_dim
-        self._action_horizon = action_horizon
+        self.embed_dim: int = embed_dim
+        self.time_embed_dim: int = time_embed_dim
+        self.state_embed_dim: int = state_embed_dim
+        self._state_dim: int = state_dim
+        self._action_dim: int = action_dim
+        self._action_horizon: int = action_horizon
 
         self.vision_encoder = vision_encoder
-        self.num_cameras = num_cameras
-        self.objective = objective
+        self.num_cameras: int = num_cameras
+        self.objective: PolicyObjective = objective
 
-        self.use_rope = use_rope
-        self.use_spe = not self.use_rope
+        self.use_rope: bool = use_rope
+        self.use_spe: bool = not self.use_rope
 
         self.state_encoder = StateEncoder(self._state_dim, self.state_embed_dim)
-        self.language_encoder = language_encoder
+        self.language_encoder: None | LanguageEncoder = language_encoder
         if language_encoder is not None:
             logger.debug("Initialised Language Encoder into the model")
 
-        self.n_language_tokens = 1 if language_encoder is not None else 0
-        self.n_vision_tokens = self.vision_encoder.num_tokens
-        self.n_state_tokens = num_obs
-        self.n_time_tokens = 1
+        self.n_language_tokens: int = 1 if language_encoder is not None else 0
+        self.n_vision_tokens: int = self.vision_encoder.num_tokens
+        self.n_state_tokens: int = num_obs
+        self.n_time_tokens: int = 1
 
-        self.condition_dim = (
+        self.condition_dim: int = (
             (self.n_language_tokens + self.n_vision_tokens) * self.embed_dim
             + self.n_state_tokens * self.state_embed_dim
             + self.n_time_tokens * self.time_embed_dim
@@ -152,13 +150,12 @@ class LBMPolicy(Policy):
 
         self.decoder = nn.ModuleList(
             [
-                DiTBlock(
+                LBMBlock(
                     embed_dim,
                     self.condition_dim,
                     decoder_num_attn_heads,
                     decoder_feedforward_dim,
                     use_rope,
-                    decoder_dropout,
                 )
                 for _ in range(decoder_num_blocks)
             ]

@@ -45,15 +45,13 @@ class DiTCrossAttnBlock(nn.Module):
         num_attn_heads: int,
         feedforward_dim: int,
         use_rope: bool = True,
-        dropout: float = 0.1,
     ):
         super().__init__()
 
-        self.embed_dim = embed_dim
-        self.cond_dim = cond_dim
-        self.num_attn_heads = num_attn_heads
-        self.feedforward_dim = feedforward_dim
-        self.dropout = dropout
+        self.embed_dim: int = embed_dim
+        self.cond_dim: int = cond_dim
+        self.num_attn_heads: int = num_attn_heads
+        self.feedforward_dim: int = feedforward_dim
 
         if use_rope:
             self.self_attn_block = RoPESelfAttention(embed_dim, num_attn_heads)
@@ -63,11 +61,15 @@ class DiTCrossAttnBlock(nn.Module):
         self.cross_attn_block = CrossAttention(embed_dim, num_attn_heads)
         self.ffn_block = FFNBlock(embed_dim, feedforward_dim)
 
-        self.layer_norm1 = nn.LayerNorm(self.embed_dim)
-        self.layer_norm2 = nn.LayerNorm(self.embed_dim)
-        self.layer_norm3 = nn.LayerNorm(self.embed_dim)
-
-        self.dropout_layer = nn.Dropout(self.dropout)
+        self.layer_norm1 = nn.LayerNorm(
+            self.embed_dim, elementwise_affine=False, eps=1e-6
+        )
+        self.layer_norm2 = nn.LayerNorm(
+            self.embed_dim, elementwise_affine=False, eps=1e-6
+        )
+        self.layer_norm3 = nn.LayerNorm(
+            self.embed_dim, elementwise_affine=False, eps=1e-6
+        )
 
         self.adaln_block = nn.Sequential(
             nn.SiLU(), nn.Linear(self.cond_dim, 9 * self.embed_dim)
@@ -104,7 +106,6 @@ class DiTCrossAttnBlock(nn.Module):
         x_post_attn = alpha1 * x_attn
 
         # Residual Connection
-        x_post_attn = self.dropout_layer(x_post_attn)
         x = x + x_post_attn
 
         x_norm = self.layer_norm2(x)
@@ -112,7 +113,6 @@ class DiTCrossAttnBlock(nn.Module):
         x_attn = self.cross_attn_block(x_pre_attn, x_kv)
         x_post_attn = alpha2 * x_attn
 
-        x_post_attn = self.dropout_layer(x_post_attn)
         x = x + x_post_attn
 
         # FFN Block
@@ -122,7 +122,6 @@ class DiTCrossAttnBlock(nn.Module):
         x_post_ffn = alpha3 * x_ffn
 
         # Residual Connection
-        x_post_ffn = self.dropout_layer(x_post_ffn)
         x = x + x_post_ffn
 
         return x
@@ -137,7 +136,6 @@ class DITCrossAttnPolicy(Policy):
         decoder_num_blocks: int,
         decoder_num_attn_heads: int,
         decoder_feedforward_dim: int,
-        decoder_dropout: float,
         state_dim: int,
         num_obs: int,
         action_dim: int,
@@ -150,29 +148,29 @@ class DITCrossAttnPolicy(Policy):
     ):
         super().__init__()
 
-        self.embed_dim = embed_dim
-        self.time_embed_dim = time_embed_dim
-        self.state_embed_dim = state_embed_dim
-        self._state_dim = state_dim
-        self._action_dim = action_dim
-        self._action_horizon = action_horizon
+        self.embed_dim: int = embed_dim
+        self.time_embed_dim: int = time_embed_dim
+        self.state_embed_dim: int = state_embed_dim
+        self._state_dim: int = state_dim
+        self._action_dim: int = action_dim
+        self._action_horizon: int = action_horizon
 
         self.vision_encoder = vision_encoder
-        self.num_cameras = num_cameras
-        self.objective = objective
+        self.num_cameras: int = num_cameras
+        self.objective: PolicyObjective = objective
 
-        self.use_rope = use_rope
-        self.use_spe = not self.use_rope
+        self.use_rope: bool = use_rope
+        self.use_spe: bool = not self.use_rope
 
         self.state_encoder = StateEncoder(self._state_dim, self.embed_dim)
-        self.language_encoder = language_encoder
+        self.language_encoder: None | LanguageEncoder = language_encoder
         if language_encoder is not None:
             logger.debug("Initialised Language Encoder into the model")
 
-        self.n_state_tokens = num_obs
-        self.n_time_tokens = 1
+        self.n_state_tokens: int = num_obs
+        self.n_time_tokens: int = 1
 
-        self.condition_dim = self.n_time_tokens * self.time_embed_dim
+        self.condition_dim: int = self.n_time_tokens * self.time_embed_dim
 
         self.decoder = nn.ModuleList(
             [
@@ -182,7 +180,6 @@ class DITCrossAttnPolicy(Policy):
                     decoder_num_attn_heads,
                     decoder_feedforward_dim,
                     use_rope,
-                    decoder_dropout,
                 )
                 for _ in range(decoder_num_blocks)
             ]
@@ -214,7 +211,7 @@ class DITCrossAttnPolicy(Policy):
 
         # Modality Embedding (for state, vision and language)
         self.modality_embedding = nn.Embedding(3, self.embed_dim)
-        self.modality_embedding_map = {
+        self.modality_embedding_map: dict[ObservationKey, int] = {
             ObservationKey.state: 0,
             ObservationKey.images: 1,
             ObservationKey.language: 2,
