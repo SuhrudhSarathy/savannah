@@ -31,7 +31,6 @@ def build_tiny_policy() -> DITCrossAttnPolicy:
         decoder_num_blocks=1,
         decoder_num_attn_heads=2,
         decoder_feedforward_dim=64,
-        decoder_dropout=0.0,
         state_dim=STATE_DIM,
         num_obs=1,
         action_dim=ACTION_DIM,

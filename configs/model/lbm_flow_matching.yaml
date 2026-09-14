@@ -5,7 +5,6 @@ state_embed_dim: 128
 decoder_num_blocks: 4
 decoder_num_attn_heads: '${eval: "max(4, ${model.embed_dim}//64)"}'
 decoder_feedforward_dim: '${eval: "4 * ${model.embed_dim}"}'
-decoder_dropout: 0.1
 state_dim: 14
 num_obs: ${task.config.obs_horizon}
 action_dim: 14

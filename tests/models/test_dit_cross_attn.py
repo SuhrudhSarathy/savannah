@@ -52,7 +52,6 @@ def _make_policy(num_obs=NUM_OBS, objective=None, language_encoder=None, use_rop
         decoder_num_blocks=2,
         decoder_num_attn_heads=4,
         decoder_feedforward_dim=128,
-        decoder_dropout=0.0,
         state_dim=STATE_DIM,
         num_obs=num_obs,
         action_dim=ACTION_DIM,
@@ -223,7 +222,6 @@ def dit_cross_attn_block():
         cond_dim=COND_DIM,
         num_attn_heads=NUM_HEADS,
         feedforward_dim=FF_DIM,
-        dropout=0.0,
     )
 
 

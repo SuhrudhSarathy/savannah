@@ -66,7 +66,6 @@ def build_tiny_policy(
         decoder_num_blocks=1,
         decoder_num_attn_heads=2,
         decoder_feedforward_dim=32,
-        decoder_dropout=0.0,
         state_dim=state_dim,
         num_obs=1,
         action_dim=action_dim,

@@ -4,7 +4,7 @@ import torch.nn as nn
 
 from savannah.models.backbones.resnet_backbone import ResNetBackbone
 from savannah.models.encoders import VisionEncoder
-from savannah.models.lbm import DiTBlock, LBMPolicy
+from savannah.models.lbm import LBMBlock, LBMPolicy
 from savannah.objectives import FlowMatchingObjective, OverfitObjective
 from savannah.utils.observation import ObservationKey
 
@@ -50,7 +50,6 @@ def _make_policy(num_obs=NUM_OBS, objective=None, language_encoder=None, use_rop
         decoder_num_blocks=2,
         decoder_num_attn_heads=4,
         decoder_feedforward_dim=128,
-        decoder_dropout=0.0,
         state_dim=STATE_DIM,
         num_obs=num_obs,
         action_dim=ACTION_DIM,
@@ -214,7 +213,7 @@ DIT_BLOCK_EMBED_DIM, COND_DIM, NUM_HEADS, FF_DIM, T = 32, 48, 4, 64, 5
 
 @pytest.fixture
 def dit_block():
-    return DiTBlock(
+    return LBMBlock(
         embed_dim=DIT_BLOCK_EMBED_DIM,
         cond_dim=COND_DIM,
         num_attn_heads=NUM_HEADS,
