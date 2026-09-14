@@ -1,6 +1,6 @@
 defaults:
   - model: dit_cross_attn_with_dino
-  - task: abc_put_bottles_lerobot
+  - task: metaworld_assembly
   - trainer: default
   - augmentation: default
   - _self_

@@ -5,7 +5,7 @@ train:
   training_steps: 75000
   warmup_steps: 1000
   schedule: constant
-  gradient_accumulation_steps: 1
+  gradient_accumulation_steps: 4
   ema_decay: 0.9999
 
 eval:

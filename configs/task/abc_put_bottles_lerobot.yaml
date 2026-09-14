@@ -10,6 +10,7 @@ config:
   obs_horizon: 2
   action_horizon: ${model.action_horizon}
   batch_size: 32
+  train_fraction: 0.995
   num_workers: 4
   use_language: false
   augmentation: ${augmentation}
