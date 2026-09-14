@@ -1,9 +1,9 @@
 import torch
 from einops import rearrange
-from transformers import AutoModel, AutoProcessor
+from transformers import AutoModel
 
+from savannah.models.backbones.image_normalizer import ImageNormalizer
 from savannah.models.backbones import VisionFeatureExtractor
-from savannah.nn.positional_embeddings import SinusoidalPositionalEncoding2D
 from savannah.utils.debug import debug_stat
 
 
@@ -21,7 +21,7 @@ class DinoV3Backbone(VisionFeatureExtractor):
         self.use_eos_only = use_eos_only
 
         self.model = AutoModel.from_pretrained(self.base_model)
-        self.processor = AutoProcessor.from_pretrained(self.base_model)
+        self.normalizer = ImageNormalizer(self.base_model)
 
         self.trainable = trainable
         if not self.trainable:
@@ -41,10 +41,6 @@ class DinoV3Backbone(VisionFeatureExtractor):
                 self.patches_per_side * self.patches_per_side + 1
             )  # + CLS token
 
-            self.sinusoidal_position_encoding_2d = SinusoidalPositionalEncoding2D(
-                self.model_output_dim
-            )
-
     @property
     def out_channels(self) -> int:
         return self._out_channels
@@ -54,15 +50,14 @@ class DinoV3Backbone(VisionFeatureExtractor):
         return self._tokens_per_image
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        inputs = self.processor(x, return_tensors="pt", do_rescale=False)
-        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+        inputs = self.normalizer(x)
 
         if not self.trainable:
             self.model.eval()
             with torch.no_grad():
-                outputs = self.model(**inputs)
+                outputs = self.model(inputs)
         else:
-            outputs = self.model(**inputs)
+            outputs = self.model(inputs)
 
         if self.use_eos_only:
             features = outputs.last_hidden_state[:, 0, ...].unsqueeze(1)
@@ -79,7 +74,6 @@ class DinoV3Backbone(VisionFeatureExtractor):
                 h=self.patches_per_side,
                 w=self.patches_per_side,
             )
-            patch_features = self.sinusoidal_position_encoding_2d(patch_features)
             patch_features_flat = rearrange(patch_features, "b c h w -> b (h w) c")
 
             features = torch.cat([cls_token, patch_features_flat], dim=1)

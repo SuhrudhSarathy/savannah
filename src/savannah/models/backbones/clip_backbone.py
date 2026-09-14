@@ -3,7 +3,7 @@ import torch.nn as nn
 from transformers import AutoProcessor, CLIPVisionModel
 
 from savannah.models.backbones import VisionFeatureExtractor
-from savannah.nn.positional_embeddings import SinusoidalPositionalEncoding
+from savannah.models.backbones.image_normalizer import ImageNormalizer
 from savannah.utils.debug import debug_stat
 from savannah.utils.log import logger
 
@@ -22,7 +22,7 @@ class CLIPBackbone(VisionFeatureExtractor):
         self.use_eos_only = use_eos_only
 
         self.model = CLIPVisionModel.from_pretrained(self.base_model)
-        self.processor = AutoProcessor.from_pretrained(self.base_model)
+        self.normalizer = ImageNormalizer(self.base_model)
 
         self.trainable = trainable
         if not self.trainable:
@@ -47,10 +47,6 @@ class CLIPBackbone(VisionFeatureExtractor):
                 patches_per_side * patches_per_side + 1
             )  # + CLS token
 
-            self.sinusoidal_position_encoding = SinusoidalPositionalEncoding(
-                self.clip_dim
-            )
-
     @property
     def out_channels(self) -> int:
         return self._out_channels
@@ -60,22 +56,20 @@ class CLIPBackbone(VisionFeatureExtractor):
         return self._tokens_per_image
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        inputs = self.processor(x, return_tensors="pt", do_rescale=False)
-        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+        inputs = self.normalizer(x)
 
         if not self.trainable:
             self.model.eval()
             with torch.no_grad():
-                outputs = self.model(**inputs)
+                outputs = self.model(inputs)
         else:
-            outputs = self.model(**inputs)
+            outputs = self.model(inputs)
 
         if self.use_eos_only:
             features = outputs.pooler_output.unsqueeze(1)
             debug_stat("features", features)
         else:
             features = outputs.last_hidden_state  # (B, n_t, output_dim)
-            features = self.sinusoidal_position_encoding(features)
 
         return features
 

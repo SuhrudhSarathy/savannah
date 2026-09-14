@@ -18,6 +18,16 @@ def backbone():
     )
 
 
+@pytest.fixture
+def trainable_backbone():
+    torch.manual_seed(0)
+    return DinoV3Backbone(
+        image_size=IMAGE_SIZE,
+        base_model=BASE_MODEL,
+        trainable=True,
+    )
+
+
 def test_output_shape(backbone):
     x = torch.randn(B, 3, IMAGE_SIZE, IMAGE_SIZE)
     out = backbone(x)
@@ -46,3 +56,18 @@ def test_distinguishes_solid_color_images(backbone):
         red_features.flatten(1), blue_features.flatten(1)
     ).item()
     assert cos_sim < 0.98
+
+
+def test_input_gradient_flow(trainable_backbone):
+    trainable_backbone.train()
+    x = torch.randn(
+        2, 3, 224, 224, requires_grad=True, device=trainable_backbone.model.device
+    )
+    out = trainable_backbone(x)
+    loss = out.sum()
+    loss.backward()
+
+    # If this is None, the computation graph is severed at the processor boundary
+    assert x.grad is not None, (
+        "Gradients failed to flow back through to the input tensor!"
+    )

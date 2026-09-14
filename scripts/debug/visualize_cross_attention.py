@@ -14,6 +14,16 @@ DiTCrossAttnBlock.forward). There is also no self-attention over
 language/vision/state: self-attention only runs over the noisy
 action-horizon tokens.
 
+Vision token layout is generic across `VisionEncoder` configs (see
+`_vision_token_layout`): it reads `vision_encoder.tokens_per_image`, which is
+already resampler-aware (correct for a plain ResNet/DINOv3/CLIP backbone as
+well as one followed by a perceiver/token-learner resampler), and separately
+handles ViT-style backbones (DINOv3/CLIP with `use_eos_only=False`) that
+prepend a CLS token ahead of the patch grid. When a resampler is configured,
+its output tokens are abstract learned latents with no fixed patch-position
+correspondence, so they're plotted as a per-image attention-mass summary
+rather than a spatial heatmap.
+
 Why: train/val (denoising) loss can look fine while the cross-attention
 never actually learns to localize the gripper/object — the loss doesn't
 distinguish "attends to the right patch" from "attends everywhere equally".
@@ -52,6 +62,7 @@ except ImportError:
 
 import math
 import os
+from typing import NamedTuple
 
 import hydra
 import matplotlib
@@ -202,21 +213,47 @@ def _row_entropy(row: torch.Tensor) -> torch.Tensor:
     return torch.tensor(_normalized_entropy(row))
 
 
-def _vision_token_grid_shape(vision_encoder, num_cameras: int, num_obs: int):
-    """Returns (h, w) patches per image, or None if the backbone pools to a
-    single token per image (e.g. spatial-softmax) — no spatial map to draw."""
-    tokens_per_image = vision_encoder.backbone.tokens_per_image
-    if tokens_per_image == 1:
-        return None
-    side = round(math.sqrt(tokens_per_image))
-    if side * side != tokens_per_image:
+class VisionTokenLayout(NamedTuple):
+    """Describes how the tokens *one camera/obs-step* contributes to the
+    cross-attn kv sequence should be interpreted."""
+
+    tokens_per_image: int  # token count per camera/obs-step, post-resampler if any
+    grid_shape: tuple[int, int] | None  # (h, w) patch grid, or None if not spatial
+    has_cls_token: bool  # True if index 0 of each block is a non-spatial CLS token
+
+
+def _vision_token_layout(vision_encoder) -> VisionTokenLayout:
+    """Works generically across `VisionEncoder` configs:
+    - plain pooling backbones (e.g. ResNet + spatial-softmax) -> 1 token, no grid
+    - plain spatial backbones (ResNet/LoRAResNet patch grid, or DINOv3/CLIP with
+      `use_eos_only=False`, which additionally prepend a CLS token) -> a square
+      patch grid, optionally with a leading CLS token to exclude from it
+    - a perceiver/token-learner resampler on top of any backbone -> a fixed
+      number of *abstract* learned latents with no fixed patch-position
+      correspondence (even if that count happens to be a perfect square), so
+      no spatial grid is drawn regardless of backbone
+    `vision_encoder.tokens_per_image` is already resampler-aware (see
+    `VisionEncoder.tokens_per_image`), so it's always the correct per-image
+    token count actually present in the cross-attn kv sequence.
+    """
+    tokens_per_image = vision_encoder.tokens_per_image
+
+    if vision_encoder.resampler is not None or tokens_per_image == 1:
+        return VisionTokenLayout(tokens_per_image, None, False)
+
+    backbone = vision_encoder.backbone
+    has_cls = hasattr(backbone, "patches_per_side")
+    side = backbone.patches_per_side if has_cls else round(math.sqrt(tokens_per_image))
+    expected = side * side + (1 if has_cls else 0)
+    if expected != tokens_per_image:
         logger.warning(
-            "tokens_per_image={} isn't a perfect square; can't lay it out as an "
-            "image-shaped grid, falling back to a 1D strip",
+            "tokens_per_image={} isn't a perfect square{}; can't lay it out as "
+            "an image-shaped grid, falling back to a per-image summary",
             tokens_per_image,
+            " patch grid + CLS token" if has_cls else "",
         )
-        return (1, tokens_per_image)
-    return (side, side)
+        return VisionTokenLayout(tokens_per_image, None, False)
+    return VisionTokenLayout(tokens_per_image, (side, side), has_cls)
 
 
 def _reduce_weights(
@@ -278,15 +315,22 @@ def _plot_block(
     block_idx: int,
     weights_vec: torch.Tensor,  # (T_vision,) — vision tokens only, kv's language/state slices excluded
     images: dict,  # cam_name -> (num_obs, H, W, 3) numpy in [0,1]
-    grid_shape,  # (h, w) or None
+    layout: VisionTokenLayout,
     cameras: list[str],
     num_obs: int,
     output_dir: str,
     step: int,
 ):
-    tokens_per_cam_obs = 1 if grid_shape is None else grid_shape[0] * grid_shape[1]
-    per_cam_obs = weights_vec.reshape(len(cameras), num_obs, tokens_per_cam_obs)
-    global_max = weights_vec.max().item()
+    per_cam_obs = weights_vec.reshape(len(cameras), num_obs, layout.tokens_per_image)
+    spatial = per_cam_obs[..., 1:] if layout.has_cls_token else per_cam_obs
+    if layout.grid_shape is not None:
+        global_max = spatial.max().item()
+    else:
+        # No per-token spatial map (pooled token, or abstract latents from a
+        # perceiver/token-learner resampler) to compare against. Normalize
+        # against the summed-per-image mass instead, so the wash below is
+        # relative to the other images in this block.
+        global_max = per_cam_obs.sum(dim=-1).max().item()
 
     fig, axes = plt.subplots(
         len(cameras), num_obs, figsize=(4 * num_obs, 4 * len(cameras)), squeeze=False
@@ -297,14 +341,27 @@ def _plot_block(
             img = images[cam][obs_i]
             token_weights = per_cam_obs[cam_i, obs_i]
 
-            if grid_shape is None:
-                ax.imshow(img)
+            if layout.grid_shape is None:
+                # No spatial correspondence, but still make attention visible
+                # *on* the image (not just in the title) via a uniform color
+                # wash whose intensity is the image's total attention mass.
+                mass = token_weights.sum().item()
+                heat = np.full(
+                    img.shape[:2], mass / max(global_max, 1e-12), dtype=np.float32
+                )
+                blended = _overlay_heatmap(img, heat)
+                ax.imshow(np.clip(blended, 0, 1))
                 ax.set_title(
-                    f"{cam} | obs t-{num_obs - 1 - obs_i} | w={token_weights.item():.3f}",
+                    f"{cam} | obs t-{num_obs - 1 - obs_i} | "
+                    f"w={mass:.3f} (n={token_weights.numel()})",
                     fontsize=9,
                 )
             else:
-                h, w = grid_shape
+                h, w = layout.grid_shape
+                cls_note = ""
+                if layout.has_cls_token:
+                    cls_note = f" | cls={token_weights[0].item():.3f}"
+                    token_weights = token_weights[1:]
                 heat = token_weights.view(h, w)[None, None]
                 heat = F.interpolate(
                     heat, size=img.shape[:2], mode="bilinear", align_corners=False
@@ -313,7 +370,8 @@ def _plot_block(
                 blended = _overlay_heatmap(img, heat)
                 ax.imshow(np.clip(blended, 0, 1))
                 ax.set_title(
-                    f"{cam} | obs t-{num_obs - 1 - obs_i} | peak={token_weights.max().item():.3f}",
+                    f"{cam} | obs t-{num_obs - 1 - obs_i} | "
+                    f"peak={token_weights.max().item():.3f}{cls_note}",
                     fontsize=9,
                 )
             ax.axis("off")
@@ -424,7 +482,7 @@ def run_attention_viz(cfg: DictConfig) -> None:
 
     cameras = list(task.config.cameras)
     num_obs = task.config.obs_horizon
-    grid_shape = _vision_token_grid_shape(policy.vision_encoder, len(cameras), num_obs)
+    vision_layout = _vision_token_layout(policy.vision_encoder)
 
     # Raw [0,1] pixel images for the overlay, per camera: (num_obs, H, W, 3)
     images = {
@@ -483,7 +541,7 @@ def run_attention_viz(cfg: DictConfig) -> None:
             block_idx,
             reduced_vision,
             images,
-            grid_shape,
+            vision_layout,
             cameras,
             num_obs,
             cfg.output_dir,

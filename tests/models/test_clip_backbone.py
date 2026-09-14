@@ -64,17 +64,6 @@ def test_eval_mode_deterministic(backbone):
     assert torch.allclose(out1, out2)
 
 
-def test_different_input_resolutions(backbone):
-    # The processor resizes any input to the model's configured image_size,
-    # so arbitrary input resolutions should still produce a fixed-size output.
-    backbone.eval()
-    for res in [96, 160, 224]:
-        x = torch.randn(B, 3, res, res)
-        with torch.no_grad():
-            out = backbone(x)
-        assert out.shape == (B, 1, backbone.out_channels), f"Failed at resolution {res}"
-
-
 def test_distinguishes_solid_color_images(backbone):
     # Regression test: dataset images are float32 in [0, 1] (see
     # savannah/data/dataset.py), but CLIPImageProcessor defaults to
@@ -96,3 +85,28 @@ def test_distinguishes_solid_color_images(backbone):
         red_features.flatten(1), blue_features.flatten(1)
     ).item()
     assert cos_sim < 0.98
+
+
+@pytest.fixture
+def trainable_backbone():
+    torch.manual_seed(0)
+    return CLIPBackbone(
+        image_size=IMAGE_SIZE,
+        base_model=BASE_MODEL,
+        trainable=True,
+    )
+
+
+def test_input_gradient_flow(trainable_backbone):
+    trainable_backbone.train()
+    x = torch.randn(
+        2, 3, 224, 224, requires_grad=True, device=trainable_backbone.model.device
+    )
+    out = trainable_backbone(x)
+    loss = out.sum()
+    loss.backward()
+
+    # If this is None, the computation graph is severed at the processor boundary
+    assert x.grad is not None, (
+        "Gradients failed to flow back through to the input tensor!"
+    )
