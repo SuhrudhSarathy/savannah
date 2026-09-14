@@ -5,11 +5,11 @@ real DinoV3Backbone vision encoder in both its "EOS" (single pooled token)
 and "without EOS" (patch tokens) modes, crossed with a real CLIP-based
 LanguageEncoder being present or absent.
 
-The non-EOS DinoV3Backbone is configured with `reduce=True` so it still
-exercises the real patch-token + 2D positional-encoding path, but caps the
-token count at a handful of tokens -- LBMPolicy/UNetPolicy pool every vision
-token into a single flat conditioning vector, so the raw ~197-patch DINOv3
-output would blow up their conditioning MLPs to hundreds of millions of
+The non-EOS VisionEncoder is configured with `enable_attn_pooling=True` so it
+still exercises the real patch-token + 2D positional-encoding path, but caps
+the token count at a handful of tokens -- LBMPolicy/UNetPolicy pool every
+vision token into a single flat conditioning vector, so the raw ~197-patch
+DINOv3 output would blow up their conditioning MLPs to hundreds of millions of
 parameters.
 """
 
@@ -43,11 +43,14 @@ def vision_encoder(request):
         base_model=DINOV3_MODEL,
         use_eos_only=use_eos_only,
         trainable=False,
-        reduce=not use_eos_only,
-        reduced_tokens=REDUCED_TOKENS,
     )
     return VisionEncoder(
-        backbone, embed_dim=EMBED_DIM, num_cameras=NUM_CAMERAS, num_obs=NUM_OBS
+        backbone,
+        embed_dim=EMBED_DIM,
+        num_cameras=NUM_CAMERAS,
+        num_obs=NUM_OBS,
+        enable_attn_pooling=not use_eos_only,
+        attn_pooling_num_queries=REDUCED_TOKENS,
     )
 
 
@@ -137,15 +140,21 @@ def policy(request, vision_encoder, language_encoder):
     return built
 
 
-def make_obs(with_language: bool):
+def make_obs(with_language: bool, requires_grad: bool = False):
     obs = {
         ObservationKey.images: [
-            torch.randn(B, NUM_OBS, 3, IMAGE_SIZE, IMAGE_SIZE)
+            torch.randn(
+                B, NUM_OBS, 3, IMAGE_SIZE, IMAGE_SIZE, requires_grad=requires_grad
+            )
             for _ in range(NUM_CAMERAS)
         ],
-        ObservationKey.state: torch.randn(B, NUM_OBS, STATE_DIM),
-        ObservationKey.time: torch.rand(B) * 100.0,
-        ObservationKey.actions: torch.randn(B, ACTION_HORIZON, ACTION_DIM),
+        ObservationKey.state: torch.randn(
+            B, NUM_OBS, STATE_DIM, requires_grad=requires_grad
+        ),
+        ObservationKey.time: (torch.rand(B) * 100.0).requires_grad_(requires_grad),
+        ObservationKey.actions: torch.randn(
+            B, ACTION_HORIZON, ACTION_DIM, requires_grad=requires_grad
+        ),
         ObservationKey.gt_actions: torch.randn(B, ACTION_HORIZON, ACTION_DIM),
     }
     if with_language:
@@ -176,7 +185,8 @@ def test_loss_is_scalar_and_finite(policy, language_encoder):
 
 def test_backward_pass_populates_gradients(policy, language_encoder):
     policy.train()
-    obs = make_obs(with_language=language_encoder is not None)
+    with_language = language_encoder is not None
+    obs = make_obs(with_language=with_language, requires_grad=True)
     policy.zero_grad(set_to_none=True)
     loss = policy.compute_loss(obs)
     loss.backward()
@@ -187,3 +197,33 @@ def test_backward_pass_populates_gradients(policy, language_encoder):
         if p.requires_grad and p.grad is None
     ]
     assert not missing_grad, f"parameters with no gradient: {missing_grad}"
+
+    # x_state / x_time / the noisy-action input all flow through trainable
+    # encoders (StateEncoder, TimeEmbedding, action_embedding), so gradient
+    # must reach all the way back to these leaf observation tensors.
+    missing_source_grad = [
+        name
+        for name, tensor in {
+            "state": obs[ObservationKey.state],
+            "time": obs[ObservationKey.time],
+            "actions": obs[ObservationKey.actions],
+        }.items()
+        if tensor.grad is None
+    ]
+    assert not missing_source_grad, (
+        f"observation inputs with no gradient reaching them: {missing_source_grad}"
+    )
+
+    # The vision_encoder fixture wraps DinoV3Backbone with trainable=False,
+    # which runs the backbone forward under torch.no_grad() -- gradient is
+    # intentionally severed there, so raw pixels never receive one. Assert
+    # that boundary explicitly instead of silently skipping the check.
+    for cam_idx, img in enumerate(obs[ObservationKey.images]):
+        assert img.grad is None, (
+            f"camera {cam_idx} pixels received a gradient despite the frozen "
+            "DinoV3Backbone (trainable=False) -- did the backbone become trainable?"
+        )
+
+    # LanguageEncoder always freezes CLIPTextModel and runs it under
+    # torch.no_grad() too, so there is no gradient path back to language
+    # input (which is raw text, not a tensor, to begin with).

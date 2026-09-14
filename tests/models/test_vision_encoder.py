@@ -9,6 +9,7 @@ BACKBONE_OUT, EMBED_DIM = 16, 32
 PROJ_EMBED_DIM = 24
 NUM_CAMERAS, NUM_OBS = 2, 2
 SPATIAL_TOKENS = 4
+ATTN_POOLING_NUM_QUERIES = 3
 
 
 class PoolingStubBackbone(nn.Module):
@@ -114,6 +115,30 @@ def vision_encoder_identity_proj(pooling_backbone):
     )
 
 
+@pytest.fixture
+def vision_encoder_attn_pooling_pooling_backbone(pooling_backbone):
+    return VisionEncoder(
+        pooling_backbone,
+        embed_dim=EMBED_DIM,
+        num_cameras=NUM_CAMERAS,
+        num_obs=NUM_OBS,
+        enable_attn_pooling=True,
+        attn_pooling_num_queries=ATTN_POOLING_NUM_QUERIES,
+    )
+
+
+@pytest.fixture
+def vision_encoder_attn_pooling_spatial_backbone(spatial_backbone):
+    return VisionEncoder(
+        spatial_backbone,
+        embed_dim=EMBED_DIM,
+        num_cameras=NUM_CAMERAS,
+        num_obs=NUM_OBS,
+        enable_attn_pooling=True,
+        attn_pooling_num_queries=ATTN_POOLING_NUM_QUERIES,
+    )
+
+
 def test_num_tokens_property_pooling(vision_encoder_pooling):
     assert vision_encoder_pooling.num_tokens == NUM_CAMERAS * NUM_OBS * 1
 
@@ -179,7 +204,7 @@ def test_forward_no_nan_or_inf(vision_encoder_pooling):
 
 def test_forward_gradient_flow(vision_encoder_pooling):
     vision_encoder_pooling.train()
-    images = make_images()
+    images = [img.requires_grad_() for img in make_images()]
     out = vision_encoder_pooling(images)
     out.sum().backward()
 
@@ -188,7 +213,11 @@ def test_forward_gradient_flow(vision_encoder_pooling):
         for name, p in vision_encoder_pooling.named_parameters()
         if p.requires_grad and p.grad is None
     ]
+
+    missing_grad_in_images = [img.grad is None for img in images]
+
     assert not missing_grad, f"parameters with no gradient: {missing_grad}"
+    assert not any(missing_grad_in_images), "Gradients not flowing to images"
 
 
 def test_camera_embedding_differs_per_camera(vision_encoder_pooling):
@@ -223,3 +252,79 @@ def test_eval_mode_deterministic(vision_encoder_pooling):
     out1 = vision_encoder_pooling(images)
     out2 = vision_encoder_pooling(images)
     assert torch.equal(out1, out2)
+
+
+def test_attn_pooling_disabled_by_default(vision_encoder_pooling):
+    assert vision_encoder_pooling.attn_pooling is None
+
+
+def test_tokens_per_image_uses_attn_pooling_num_queries(
+    vision_encoder_attn_pooling_pooling_backbone,
+):
+    assert (
+        vision_encoder_attn_pooling_pooling_backbone.tokens_per_image
+        == ATTN_POOLING_NUM_QUERIES
+    )
+
+
+def test_tokens_per_image_uses_attn_pooling_num_queries_spatial_backbone(
+    vision_encoder_attn_pooling_spatial_backbone,
+):
+    # attn pooling overrides the backbone's own tokens_per_image (SPATIAL_TOKENS)
+    assert (
+        vision_encoder_attn_pooling_spatial_backbone.tokens_per_image
+        == ATTN_POOLING_NUM_QUERIES
+    )
+
+
+def test_num_tokens_with_attn_pooling(vision_encoder_attn_pooling_pooling_backbone):
+    expected = NUM_CAMERAS * NUM_OBS * ATTN_POOLING_NUM_QUERIES
+    assert vision_encoder_attn_pooling_pooling_backbone.num_tokens == expected
+
+
+def test_extract_tokens_from_image_with_attn_pooling(
+    vision_encoder_attn_pooling_pooling_backbone,
+):
+    x = torch.randn(B, 3, H, W)
+    tokens = vision_encoder_attn_pooling_pooling_backbone.extract_tokens_from_image(x)
+    assert tokens.shape == (B, ATTN_POOLING_NUM_QUERIES, BACKBONE_OUT)
+
+
+def test_forward_output_shape_with_attn_pooling_pooling_backbone(
+    vision_encoder_attn_pooling_pooling_backbone,
+):
+    images = make_images()
+    out = vision_encoder_attn_pooling_pooling_backbone(images)
+    assert out.shape == (
+        B,
+        vision_encoder_attn_pooling_pooling_backbone.num_tokens,
+        EMBED_DIM,
+    )
+
+
+def test_forward_output_shape_with_attn_pooling_spatial_backbone(
+    vision_encoder_attn_pooling_spatial_backbone,
+):
+    images = make_images()
+    out = vision_encoder_attn_pooling_spatial_backbone(images)
+    assert out.shape == (
+        B,
+        vision_encoder_attn_pooling_spatial_backbone.num_tokens,
+        EMBED_DIM,
+    )
+
+
+def test_forward_gradient_flow_with_attn_pooling(
+    vision_encoder_attn_pooling_pooling_backbone,
+):
+    vision_encoder_attn_pooling_pooling_backbone.train()
+    images = make_images()
+    out = vision_encoder_attn_pooling_pooling_backbone(images)
+    out.sum().backward()
+
+    missing_grad = [
+        name
+        for name, p in vision_encoder_attn_pooling_pooling_backbone.named_parameters()
+        if p.requires_grad and p.grad is None
+    ]
+    assert not missing_grad, f"parameters with no gradient: {missing_grad}"
