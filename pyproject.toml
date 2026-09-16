@@ -8,6 +8,9 @@ authors = [
 readme = "README.md"
 requires-python = "==3.12.*"
 dependencies = [
+    "torch==2.11.0+cu128 ; sys_platform == 'linux'",
+    "torchvision",
+    "torchcodec==0.11.0+cpu ; sys_platform == 'linux'",
     "einops",
     "diffusers",
     "transformers",
@@ -19,7 +22,8 @@ dependencies = [
     "pillow",
     "imageio",
     "matplotlib",
-    "lerobot==0.5.1",
+    "lerobot",
+    "lerobot[training]",
     "metaworld @ git+https://github.com/SuhrudhSarathy/Metaworld.git@dev/multi-env",
     "gym-pusht",
     "pymunk==6.11.1",
@@ -27,7 +31,7 @@ dependencies = [
     "mani-skill>=3.0.1",
     "pin; sys_platform == 'darwin'",
     "pre-commit>=4.5.1",
-    "abc-bottle-gym",
+    "abc-minimal",
 ]
 
 [project.optional-dependencies]
@@ -35,14 +39,6 @@ dev = [
     "pytest",
     "ruff",
     "pre-commit",
-]
-cu126 = [
-    "torch",
-    "torchvision",
-]
-cu130 = [
-    "torch",
-    "torchvision",
 ]
 
 [build-system]
@@ -53,36 +49,25 @@ build-backend = "setuptools.build_meta"
 where = ["src"]   # looks for packages inside src/
 
 [tool.uv]
-conflicts = [
-    [
-        { extra = "cu126" },
-        { extra = "cu130" },
-    ],
-]
 override-dependencies = [
     "mujoco>=3.3.7",
 ]
 
 [[tool.uv.index]]
-name = "pytorch-cu126"
-url = "https://download.pytorch.org/whl/cu126"
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
 [[tool.uv.index]]
-name = "pytorch-cu130"
-url = "https://download.pytorch.org/whl/cu130"
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.uv.sources]
-torch = [
-    { index = "pytorch-cu126", extra = "cu126" },
-    { index = "pytorch-cu130", extra = "cu130" },
-]
-torchvision = [
-    { index = "pytorch-cu126", extra = "cu126" },
-    { index = "pytorch-cu130", extra = "cu130" },
-]
-abc-bottle-gym = { git = "https://github.com/SuhrudhSarathy/abc_bottle_gym.git" }
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+torchcodec = { index = "pytorch-cpu" }
+abc-minimal = { git = "https://github.com/amazon-far/abc.git" }
 
 [tool.ruff]
 line-length = 88

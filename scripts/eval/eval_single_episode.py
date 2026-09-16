@@ -69,6 +69,7 @@ def _abc_episode_samples(cfg: DictConfig, task):
         dataset_config.cameras,
         dataset_config.obs_horizon,
         dataset_config.action_horizon,
+        image_size=dataset_config.image_size,
     )
 
     target_episode = cfg.episode_index

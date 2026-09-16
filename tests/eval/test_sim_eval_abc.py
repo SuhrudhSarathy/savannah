@@ -27,9 +27,7 @@ STATE_DIM = 14
 ACTION_DIM = 14
 NUM_CAMERAS = 3
 
-# Cap episode length so the smoke test stays fast (PutBottlesInBin-v0 is
-# registered with max_episode_steps=None). We only care that the loop
-# doesn't crash.
+# Cap episode length so the smoke test stays fast.
 MAX_EPISODE_STEPS = 12
 
 

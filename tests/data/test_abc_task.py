@@ -82,7 +82,7 @@ def test_postprocess_action_unnormalizes(task):
     zero_action = torch.zeros(1, 1, 14)
     action = task.postprocess_action(zero_action)
     # unnormalize(0) == mean, then clipped to the env's action bounds.
-    from abc_bottle_gym.env import ACTION_HIGH, ACTION_LOW
+    from savannah.tasks.abc import ACTION_HIGH, ACTION_LOW
     import numpy as np
 
     expected = np.clip(stats["actions"]["mean"], ACTION_LOW, ACTION_HIGH)

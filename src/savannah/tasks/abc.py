@@ -16,11 +16,12 @@ Because this isn't a LeRobot dataset, ABCPutBottlesTask reads episodes
 directly (mirroring abc's own `abc_minimal/train_loop.py`) instead of going
 through LerobotDatasetWrapper.
 
-Eval runs against `abc_bottle_gym` (https://github.com/SuhrudhSarathy/abc_bottle_gym),
-a standalone Gymnasium port of abc's put-bottles-in-bin MuJoCo task
-("PutBottlesInBin-v0") with no CUDA/torch/mujoco-warp dependency. Its 14-dim
-state/action layout (6 arm joints + 1 gripper, per arm) matches
-`states_actions.bin` exactly, so training and eval share the same
+Eval runs against `abc_sim` (bundled with the `abc-minimal` package, see
+https://github.com/amazon-far/abc), the sim package abc's own training loop
+uses. `abc_sim.make_env(task=...)` builds a `MuJoCoYAMEnv` directly -- there
+is no gym registry entry to `gym.make()` into. Its observations/actions use
+abc's 14-dim policy-space layout (6 arm joints + 1 gripper, per arm), which
+matches `states_actions.bin` exactly, so training and eval share the same
 normalization stats (`norm_stats.json`, z-scored mean/std).
 """
 
@@ -33,13 +34,13 @@ from savannah.utils.device import configure_mujoco_gl
 
 configure_mujoco_gl()
 
-
-import abc_bottle_gym  # noqa: F401 -- registers "PutBottlesInBin-v0"
 import gymnasium as gym
 import numpy as np
 import torch
-from abc_bottle_gym.env import ACTION_HIGH, ACTION_LOW, DEFAULT_CAMERA_KEYS
 from torch.utils.data import DataLoader, Dataset, Sampler
+from torchvision.transforms import v2
+
+import abc_sim
 
 from savannah.data.dataset import LerobotDatasetWrapper
 from savannah.tasks import BaseRobotTask
@@ -48,6 +49,32 @@ from savannah.utils.observation import ObservationKey
 STATE_DIM = 14
 ACTION_DIM = 14
 ROW_DIM = STATE_DIM + ACTION_DIM
+
+# Sim task resolved by abc_sim for this task's episodes (`config.env_name`
+# overrides it) -- see abc_sim.task_specs.SimTaskSpec for the "put_bottles"
+# env_task's evaluator ("put_bottles_in_bin") and canonical prompt.
+DEFAULT_SIM_TASK = "put_bottles"
+
+# Per-joint radian limits for one YAM arm (joint1..6), from
+# abc_sim/models/assets/i2rt_yam/yam.xml. MuJoCoYAMEnv's 14D policy-space
+# layout is [left_j1..6, left_grip, right_j1..6, right_grip] (see
+# MuJoCoYAMEnv's docstring / _build_index_maps) with joints in real radians
+# and the gripper scaled to [0, 1] (_GRIPPER_CTRL_MAX) -- unlike the other
+# tasks in this package, this action space is not normalized to [-1, 1], so
+# postprocess_action clips against these physical limits instead.
+_YAM_JOINT_RANGES = (
+    (-2.61799, 3.05433),
+    (0.0, 3.66519),
+    (0.0, 3.66519),
+    (-1.5708, 1.5708),
+    (-1.5708, 1.5708),
+    (-2.0944, 2.0944),
+)
+_YAM_GRIPPER_RANGE = (0.0, 1.0)
+_YAM_ARM_LOW = [lo for lo, _ in _YAM_JOINT_RANGES] + [_YAM_GRIPPER_RANGE[0]]
+_YAM_ARM_HIGH = [hi for _, hi in _YAM_JOINT_RANGES] + [_YAM_GRIPPER_RANGE[1]]
+ACTION_LOW = np.array(_YAM_ARM_LOW * 2, dtype=np.float32)
+ACTION_HIGH = np.array(_YAM_ARM_HIGH * 2, dtype=np.float32)
 
 
 def _task_name_to_prompt(task_name: str) -> str:
@@ -220,11 +247,23 @@ class ABCEpisodeDataset(Dataset):
         obs_horizon: int,
         action_horizon: int,
         max_episodes: Optional[int] = None,
+        image_size: Optional[int] = None,
     ):
         self.root = Path(root)
         self.cameras = list(cameras)
         self.obs_horizon = obs_horizon
         self.action_horizon = action_horizon
+        # Episode mp4s decode at whatever resolution they were recorded at
+        # (one camera's share of the combined frame's height), not
+        # necessarily square or matching the vision backbone's expected
+        # input -- resize the same way LerobotDatasetWrapper does for the
+        # "lerobot" data_source, so both paths feed the model identically
+        # sized images.
+        self._resize = (
+            v2.Resize((image_size, image_size), antialias=True)
+            if image_size is not None
+            else None
+        )
         self.episodes = _scan_episodes(self.root, action_horizon)
         if max_episodes is not None:
             self.episodes = self.episodes[:max_episodes]
@@ -300,9 +339,10 @@ class ABCEpisodeDataset(Dataset):
             "task": prompt,
         }
         for cam in self.cameras:
-            item[f"observation.images.{cam}"] = torch.stack(
-                [frame[cam] for frame in frames]
-            )  # (T, C, H, W)
+            images = torch.stack([frame[cam] for frame in frames])  # (T, C, H, W)
+            if self._resize is not None:
+                images = self._resize(images)
+            item[f"observation.images.{cam}"] = images
         return item
 
 
@@ -339,6 +379,38 @@ class _EpisodeChunkSampler(Sampler[int]):
 
     def __len__(self) -> int:
         return len(self.dataset)
+
+
+class _CameraRenderEnv(gym.Wrapper):
+    """Adds gym's `.render()` convention on top of `MuJoCoYAMEnv`.
+
+    abc_sim's own rollout API (see abc_sim/example_api_rollout.py) reads
+    camera images out of the observation dict (`obs["images"][cam]`) instead
+    of a `render()` method, but `savannah.utils.evaluation.run_rollout` calls
+    `env.render()` to capture eval video frames. Reuses each step/reset's
+    already-rendered images instead of rendering an extra frame.
+    """
+
+    def __init__(self, env: gym.Env, camera: str):
+        super().__init__(env)
+        self._camera = camera
+        self._last_obs: Optional[Dict[str, Any]] = None
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        self._last_obs = obs
+        return obs, info
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        self._last_obs = obs
+        return obs, reward, terminated, truncated, info
+
+    def render(self) -> Optional[np.ndarray]:
+        if self._last_obs is None:
+            return None
+        frame = self._last_obs["images"][self._camera]  # (3, H, W) uint8
+        return frame.transpose(1, 2, 0)  # (H, W, 3)
 
 
 class ABCPutBottlesTask(BaseRobotTask):
@@ -449,6 +521,7 @@ class ABCPutBottlesTask(BaseRobotTask):
             self.config.cameras,
             self.config.obs_horizon,
             self.config.action_horizon,
+            image_size=self.config.image_size,
         )
         val_dataset = ABCEpisodeDataset(
             str(val_root),
@@ -456,6 +529,7 @@ class ABCPutBottlesTask(BaseRobotTask):
             self.config.obs_horizon,
             self.config.action_horizon,
             max_episodes=self.config.val_episodes,
+            image_size=self.config.image_size,
         )
 
         loader_kwargs = {}
@@ -520,17 +594,19 @@ class ABCPutBottlesTask(BaseRobotTask):
         return result
 
     def _make_env(self, render_mode: str) -> gym.Env:
-        kwargs: Dict[str, Any] = {
-            "render_mode": render_mode,
-            "camera_keys": tuple(self.config.cameras) or DEFAULT_CAMERA_KEYS,
-            # Always decode camera frames, regardless of render_mode, since
-            # preprocess_observation(_history) needs obs["images"] for the policy.
-            "include_images": True,
-        }
+        kwargs: Dict[str, Any] = {"render_cameras": True}
         if self.config.image_size is not None:
-            kwargs["height"] = self.config.image_size
-            kwargs["width"] = self.config.image_size
-        return gym.make("PutBottlesInBin-v0", **kwargs)
+            kwargs["camera_height"] = self.config.image_size
+            kwargs["camera_width"] = self.config.image_size
+        env = abc_sim.make_env(
+            task=self.config.env_name or DEFAULT_SIM_TASK,
+            # Matches whatever language the policy was actually trained on --
+            # see _get_prompt -- rather than the sim task's own default prompt.
+            prompt=self._get_prompt(),
+            **kwargs,
+        )
+        render_camera = self.config.cameras[0] if self.config.cameras else "top"
+        return _CameraRenderEnv(env, render_camera)
 
     def _obs_to_tensors(self, obs_list: List[Dict[str, Any]]) -> dict:
         stats = self._get_norm_stats()
@@ -583,10 +659,14 @@ class ABCPutBottlesTask(BaseRobotTask):
         return np.clip(action, ACTION_LOW, ACTION_HIGH).astype(np.float32)
 
     def is_success(self, info: Dict[str, Any]) -> bool:
-        return bool(info.get("success", False))
+        # MuJoCoYAMEnv.step's info carries "task_success" at the top level and
+        # the full evaluator metrics nested under "task_eval" -- see
+        # abc_sim.env.MuJoCoYAMEnv._task_step_info.
+        return bool(info.get("task_success", False))
 
     def get_metrics(self, info: Dict[str, Any]) -> str:
+        task_eval = info.get("task_eval") or {}
         return (
-            f"bottles_in_bin: {info.get('num_bottles_in_bin', 0)}"
-            f"/{info.get('num_active_bottles', 0)}"
+            f"bottles_in_bin: {task_eval.get('num_bottles_in_bin', 0)}"
+            f"/{task_eval.get('num_active_bottles', 0)}"
         )
