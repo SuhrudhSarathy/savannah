@@ -62,7 +62,7 @@ class SinusoidalPositionalEncoding2D(nn.Module):
         self.dim = channels // 2
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batch, _, height, width = x.shape
+        _batch, _, height, width = x.shape
 
         y_coords = torch.arange(height, device=x.device).unsqueeze(1).repeat(1, width)
         x_coords = torch.arange(width, device=x.device).unsqueeze(0).repeat(height, 1)

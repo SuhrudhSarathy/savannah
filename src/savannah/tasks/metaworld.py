@@ -119,7 +119,7 @@ class MultiCameraObsWrapper(ObservationWrapper):
         main_frame = self.env.render()
         if main_frame is None:
             return None
-        main_h, main_w = main_frame.shape[:2]
+        _main_h, main_w = main_frame.shape[:2]
 
         data = self.env.unwrapped.data
         thumbnails = []

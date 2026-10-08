@@ -15,7 +15,6 @@ from omegaconf import DictConfig, OmegaConf
 from savannah.factory import build_policy, build_task
 from savannah.trainer.overfit import overfit_on_batch, validate_action_reconstruction
 from savannah.utils.device import get_device
-from savannah.utils.log import setup_logging
 
 
 @hydra.main(version_base=None, config_path="../../configs", config_name="overfit")
@@ -30,7 +29,6 @@ def main(cfg: DictConfig) -> None:
     image/state shapes) on top of the model — the natural next step once
     `overfit_random.py` passes, and the last check before a full training run.
     """
-    log_path = setup_logging(log_dir="logs", level=cfg.log_level)
     print(OmegaConf.to_yaml(cfg, resolve=True))
     device = get_device()
     print("Using device:", device)

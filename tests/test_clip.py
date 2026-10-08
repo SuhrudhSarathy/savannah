@@ -1,8 +1,7 @@
 from random import choice
 
-from transformers import AutoTokenizer, CLIPTextModel, CLIPVisionModel, AutoProcessor
-
 import torch
+from transformers import AutoProcessor, AutoTokenizer, CLIPTextModel, CLIPVisionModel
 
 
 def test_text():
@@ -17,8 +16,8 @@ def test_text():
     text_inputs = [generate_input() for _ in range(32)]
     print(text_inputs)
 
-    input = tokeniser(text_inputs, padding=True, return_tensors="pt")
-    output = model(**input)
+    input_t = tokeniser(text_inputs, padding=True, return_tensors="pt")
+    output = model(**input_t)
     pooled_output = output.pooler_output
 
     print(pooled_output.shape)

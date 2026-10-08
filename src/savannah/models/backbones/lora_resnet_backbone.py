@@ -3,11 +3,11 @@ import math
 import torch
 import torch.nn as nn
 import torchvision.models as models
+from einops import rearrange
 
 from savannah.models.backbones import VisionFeatureExtractor
 from savannah.models.backbones.resnet_backbone import SpatialSoftmax
 from savannah.nn.positional_embeddings import SinusoidalPositionalEncoding2D
-from einops import rearrange
 
 
 class LoRAConv2d(nn.Module):
@@ -136,7 +136,7 @@ class LoRAResNetBackbone(VisionFeatureExtractor):
                 self.add_lora(module)
 
     def merge_lora(self, model=None):
-        if model == None:
+        if model is None:
             model = self.backbone
 
         for name, module in model.named_children():
@@ -147,7 +147,7 @@ class LoRAResNetBackbone(VisionFeatureExtractor):
                 self.merge_lora(module)
 
     def unmerge_lora(self, model=None):
-        if model == None:
+        if model is None:
             model = self.backbone
 
         for name, module in model.named_children():

@@ -1,6 +1,6 @@
-from diffusers.models.normalization import LayerNorm
 import torch
 import torch.nn as nn
+from diffusers.models.normalization import LayerNorm
 
 from savannah.nn.cross_attention import CrossAttention
 

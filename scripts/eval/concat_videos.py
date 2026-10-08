@@ -83,7 +83,7 @@ def make_text_frame(
     total_height = line_height * len(lines)
     y_start = (h - total_height) // 2 + line_sizes[0][1]
 
-    for i, (line, (tw, th)) in enumerate(zip(lines, line_sizes)):
+    for i, (line, (tw, _th)) in enumerate(zip(lines, line_sizes, strict=True)):
         x = (w - tw) // 2
         y = y_start + i * line_height
         cv2.putText(

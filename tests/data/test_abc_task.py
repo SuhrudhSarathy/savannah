@@ -82,8 +82,9 @@ def test_postprocess_action_unnormalizes(task):
     zero_action = torch.zeros(1, 1, 14)
     action = task.postprocess_action(zero_action)
     # unnormalize(0) == mean, then clipped to the env's action bounds.
-    from savannah.tasks.abc import ACTION_HIGH, ACTION_LOW
     import numpy as np
+
+    from savannah.tasks.abc import ACTION_HIGH, ACTION_LOW
 
     expected = np.clip(stats["actions"]["mean"], ACTION_LOW, ACTION_HIGH)
     np.testing.assert_allclose(action, expected, atol=1e-4)

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange, repeat
 
-from savannah.models.encoders import VisionEncoder, StateEncoder
+from savannah.models.encoders import StateEncoder, VisionEncoder
 from savannah.models.encoders.language_encoder import LanguageEncoder
 from savannah.models.policy import Policy
 from savannah.nn.time_embedding import TimeEmbedding

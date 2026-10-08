@@ -1,4 +1,4 @@
-from typing import Any, Dict, Union
+from typing import Any, ClassVar, Dict, Union
 
 import numpy as np
 import sapien
@@ -24,19 +24,19 @@ class ColorMatchingEnv(BaseEnv):
     corresponding colored shallow box (bin) on the table.
     """
 
-    SUPPORTED_ROBOTS = ["panda_wristcam", "panda", "fetch", "widowx250s"]
+    SUPPORTED_ROBOTS: ClassVar = ["panda_wristcam", "panda", "fetch", "widowx250s"]
     agent: Union[PandaWristCam, Panda, Fetch, WidowX250S]
 
     cube_half_size = 0.02
     bin_half_size = 0.05
     bin_thickness = 0.005
 
-    box_slots = [
+    box_slots: ClassVar = [
         ((-0.3, -0.45), (-0.2, -0.15)),
         ((-0.3, -0.15), (-0.2, 0.15)),
         ((-0.3, 0.15), (-0.2, 0.45)),
     ]
-    bin_slots = [
+    bin_slots: ClassVar = [
         ((-0.1, -0.45), (0.05, -0.15)),
         ((-0.1, -0.15), (0.05, 0.15)),
         ((-0.1, 0.15), (0.05, 0.45)),

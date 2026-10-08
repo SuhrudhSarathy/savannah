@@ -29,18 +29,17 @@ import json
 from collections import OrderedDict, deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from savannah.utils.device import configure_mujoco_gl
 
+from savannah.utils.device import configure_mujoco_gl
 
 configure_mujoco_gl()
 
+import abc_sim
 import gymnasium as gym
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset, Sampler
 from torchvision.transforms import v2
-
-import abc_sim
 
 from savannah.data.dataset import LerobotDatasetWrapper
 from savannah.tasks import BaseRobotTask

@@ -16,7 +16,7 @@ if __name__ == "__main__":
 
     choice = ["red", "blue", "green"]
 
-    for i in range(5):
+    for _i in range(5):
         pick_color = choice[torch.randint(0, 2, (1,))]
         place_color = choice[torch.randint(0, 2, (1,))]
 

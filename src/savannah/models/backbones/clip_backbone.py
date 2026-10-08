@@ -1,11 +1,9 @@
 import torch
-import torch.nn as nn
-from transformers import AutoProcessor, CLIPVisionModel
+from transformers import CLIPVisionModel
 
 from savannah.models.backbones import VisionFeatureExtractor
 from savannah.models.backbones.image_normalizer import ImageNormalizer
 from savannah.utils.debug import debug_stat
-from savannah.utils.log import logger
 
 
 class CLIPBackbone(VisionFeatureExtractor):

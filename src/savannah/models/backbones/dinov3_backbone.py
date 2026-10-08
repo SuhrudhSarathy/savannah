@@ -2,8 +2,8 @@ import torch
 from einops import rearrange
 from transformers import AutoModel
 
-from savannah.models.backbones.image_normalizer import ImageNormalizer
 from savannah.models.backbones import VisionFeatureExtractor
+from savannah.models.backbones.image_normalizer import ImageNormalizer
 from savannah.utils.debug import debug_stat
 
 

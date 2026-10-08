@@ -2,72 +2,49 @@
 name = "savannah"
 version = "0.1.0"
 description = "Robot Learning models in the wild"
-authors = [
-  {name = "Suhrudh S", email = "suhrudhsarathy@gmail.com"},
-]
+authors = [{ name = "Suhrudh S", email = "suhrudhsarathy@gmail.com" }]
 readme = "README.md"
 requires-python = "==3.12.*"
+
 dependencies = [
-    "torch==2.11.0+cu128 ; sys_platform == 'linux'",
+    "torch>=2.11",
     "torchvision",
-    "torchcodec==0.11.0+cpu ; sys_platform == 'linux'",
+    "torchcodec",
     "einops",
     "diffusers",
     "transformers",
     "hydra-core",
     "omegaconf",
-    "wandb",
     "wandb[media]",
     "tqdm",
     "pillow",
     "imageio",
     "matplotlib",
-    "lerobot",
-    "lerobot[training]",
-    "metaworld @ git+https://github.com/SuhrudhSarathy/Metaworld.git@dev/multi-env",
-    "gym-pusht",
-    "pymunk==6.11.1",
     "loguru",
-    "mani-skill>=3.0.1",
-    "pin; sys_platform == 'darwin'",
-    "pre-commit>=4.5.1",
-    "abc-minimal",
+    "lerobot[training]",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest",
-    "ruff",
-    "pre-commit",
+sim = [
+    "metaworld @ git+https://github.com/SuhrudhSarathy/Metaworld.git@dev/multi-env",
+    "gym-pusht",
+    "pymunk==6.11.1",
+    "mani-skill>=3.0.1",
+    "pin; sys_platform == 'darwin'",
 ]
+
+[dependency-groups]
+dev = ["pytest", "ruff", "pre-commit>=4.5.1"]
 
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["src"]   # looks for packages inside src/
+where = ["src"]
 
 [tool.uv]
-override-dependencies = [
-    "mujoco>=3.3.7",
-]
-
-[[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[tool.uv.sources]
-torch = { index = "pytorch-cu128" }
-torchvision = { index = "pytorch-cu128" }
-torchcodec = { index = "pytorch-cpu" }
-abc-minimal = { git = "https://github.com/amazon-far/abc.git" }
+override-dependencies = ["mujoco>=3.3.7"]   # only if the sim extra still needs it
 
 [tool.ruff]
 line-length = 88
@@ -75,11 +52,9 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["A", "B", "E", "F", "I", "RUF", "W"]
-ignore = ["E203", "E501", "B006"]
+ignore = ["E203", "E501", "B006", "RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402", "F401", "F403"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src"]
+"scripts/**" = ["E402"]
+"src/savannah/tasks/abc.py" = ["E402"]   # MUJOCO_GL must be set before mujoco imports

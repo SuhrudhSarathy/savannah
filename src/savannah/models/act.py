@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import repeat
 
-from savannah.models.policy import Policy
 from savannah.models.encoders.vision_encoder import VisionEncoder
+from savannah.models.policy import Policy
 from savannah.nn.positional_embeddings import SinusoidalPositionalEncoding
 from savannah.nn.transformer import TransformerDecoder, TransformerEncoder
 from savannah.utils import ObservationKey

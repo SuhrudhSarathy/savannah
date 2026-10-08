@@ -7,9 +7,10 @@ import argparse
 import random
 import warnings
 
+import gymnasium as gym
+
 warnings.filterwarnings("ignore")
 
-import gymnasium as gym
 import numpy as np
 import torch
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -131,7 +132,7 @@ def collect_episode(
     frames: list[dict] = []
     success = False
 
-    for i in range(max_steps):
+    for _ in range(max_steps):
         tcp_pose = raw_env.agent.tcp.pose.raw_pose[0].cpu().numpy()
         qpos = raw_env.agent.robot.get_qpos()[0].cpu().numpy()
         gripper_width = np.array([qpos[-2] + qpos[-1]], dtype=np.float32)

@@ -106,7 +106,7 @@ def run_batch(
             procs.append(None)
 
     exit_codes = []
-    for (exp, _), proc in zip(batch, procs):
+    for (exp, _), proc in zip(batch, procs, strict=True):
         if proc is not None:
             proc.wait()
             exit_codes.append(proc.returncode)
