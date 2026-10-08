@@ -2,7 +2,7 @@
 # Runs training and optionally destroys the vast.ai instance when done.
 #
 # Usage:
-#   bash scripts/run_train.sh [hydra overrides]
+#   bash infra/run_train.sh [hydra overrides]
 #
 # Env vars:
 #   AUTO_DESTROY=true        — destroy the instance after training
@@ -11,8 +11,10 @@
 set -euo pipefail
 
 echo "==> Starting training..."
-uv run python scripts/train.py "$@"
-TRAIN_EXIT=$?
+# `|| TRAIN_EXIT=$?` so a failed run still reaches AUTO_DESTROY below instead
+# of `set -e` exiting here and leaving the instance running.
+TRAIN_EXIT=0
+uv run python scripts/train.py "$@" || TRAIN_EXIT=$?
 
 echo "==> Training finished (exit code $TRAIN_EXIT)."
 

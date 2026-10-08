@@ -2,8 +2,12 @@
 Run multiple training experiments sequentially or in parallel based on available VRAM.
 
 Usage:
-    uv run python scripts/multi_run.py configs/experiments.yaml
-    uv run python scripts/multi_run.py configs/experiments.yaml --dry-run
+    uv run python infra/multi_run.py configs/experiments.yaml
+    uv run python infra/multi_run.py configs/experiments.yaml --dry-run
+
+Each experiment's `name` becomes the run's Hydra `name`, so its W&B run name,
+artifact name, and checkpoint dir (`checkpoints/<name>`, or
+`<checkpoint_root>/<name>` if the YAML sets `checkpoint_root`) all follow it.
 """
 
 import argparse
@@ -51,10 +55,11 @@ def get_gpus() -> list[GPU]:
         return []
 
 
-def load_experiments(path: Path) -> tuple[list[Experiment], int]:
+def load_experiments(path: Path) -> tuple[list[Experiment], int, str | None]:
     with open(path) as f:
         cfg = yaml.safe_load(f)
     vram_per_run_gb = cfg.get("vram_per_run_gb", 8)
+    checkpoint_root = cfg.get("checkpoint_root")
     experiments = [
         Experiment(
             name=exp["name"],
@@ -62,22 +67,26 @@ def load_experiments(path: Path) -> tuple[list[Experiment], int]:
         )
         for exp in cfg["experiments"]
     ]
-    return experiments, vram_per_run_gb
+    return experiments, vram_per_run_gb, checkpoint_root
 
 
 def build_command(
     exp: Experiment,
     cuda_devices: str | None = None,
     memory_fraction: float | None = None,
+    checkpoint_root: str | None = None,
 ) -> tuple[list[str], dict]:
     cmd = [
         "uv",
         "run",
         "python",
         "scripts/train.py",
-        f"wandb.run_name={exp.name}",
+        f"name={exp.name}",
         f"hydra.run.dir=outputs/{exp.name}",
     ]
+    if checkpoint_root is not None:
+        cmd.append(f"trainer.checkpoint.checkpoint_dir={checkpoint_root}/{exp.name}")
+    # Last, so an experiment's own overrides win.
     cmd.extend(exp.overrides)
     env = os.environ.copy()
     if cuda_devices is not None:
@@ -91,10 +100,11 @@ def run_batch(
     batch: list[tuple[Experiment, str | None]],
     dry_run: bool,
     memory_fraction: float | None = None,
+    checkpoint_root: str | None = None,
 ) -> list[int]:
     procs = []
     for exp, cuda_devices in batch:
-        cmd, env = build_command(exp, cuda_devices, memory_fraction)
+        cmd, env = build_command(exp, cuda_devices, memory_fraction, checkpoint_root)
         frac_str = f"  mem_fraction={memory_fraction:.2f}" if memory_fraction else ""
         print(
             f"  [start] {exp.name}  CUDA_VISIBLE_DEVICES={cuda_devices or 'all'}{frac_str}"
@@ -127,7 +137,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    experiments, vram_per_run_gb = load_experiments(args.experiments_yaml)
+    experiments, vram_per_run_gb, checkpoint_root = load_experiments(
+        args.experiments_yaml
+    )
     gpus = get_gpus()
     vram_per_run_mb = vram_per_run_gb * 1024
 
@@ -179,7 +191,12 @@ def main() -> None:
         else:
             batch = [(exp, None) for exp in chunk]
 
-        codes = run_batch(batch, dry_run=args.dry_run, memory_fraction=memory_fraction)
+        codes = run_batch(
+            batch,
+            dry_run=args.dry_run,
+            memory_fraction=memory_fraction,
+            checkpoint_root=checkpoint_root,
+        )
         all_exit_codes.extend(codes)
         print()
 

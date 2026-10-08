@@ -1,4 +1,5 @@
 import os
+import platform
 
 import torch
 
@@ -31,8 +32,12 @@ def configure_mujoco_gl():
     the GPU without a display; osmesa is the software fallback for
     CPU-only machines. Must run before `import mujoco`, since the backend
     is selected from MUJOCO_GL at import time.
+
+    EGL and osmesa only exist on Linux (MuJoCo rejects them elsewhere); on
+    macOS/Windows MuJoCo's default already renders offscreen without a
+    display, so MUJOCO_GL is left unset there.
     """
-    if "MUJOCO_GL" in os.environ:
+    if "MUJOCO_GL" in os.environ or platform.system() != "Linux":
         return
     os.environ["MUJOCO_GL"] = "egl" if torch.cuda.is_available() else "osmesa"
     logger.info("Set MUJOCO_GL={}", os.environ["MUJOCO_GL"])

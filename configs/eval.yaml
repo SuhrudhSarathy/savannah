@@ -9,7 +9,7 @@ wandb_artifact: null # OR pull from W&B: wandb_artifact=savannah/flow_matching_p
 use_ema: true # load ema_state_dict instead of model_state_dict
 num_episodes: 1
 execute_steps: 16 # how many actions to execute per chunk (receding horizon)
-video_folder: ./eval_videos/pusht_adaln
+video_folder: ./eval_videos/${hydra:runtime.choices.model}_${hydra:runtime.choices.task}
 episode_index: 0 # which dataset episode to inspect (used by eval_single_episode.py)
 pick_color: null # ManiSkill ColorMatching only: red/green/blue. If null, chosen randomly each episode.
 place_color: null # ManiSkill ColorMatching only: red/green/blue. If null, chosen randomly each episode.

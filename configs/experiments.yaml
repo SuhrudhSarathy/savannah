@@ -1,39 +1,41 @@
 # Template for multi_run.py
-# Run: uv run python scripts/multi_run.py configs/experiments.yaml
+# Run: uv run python infra/multi_run.py configs/experiments.yaml
+#
+# Each experiment's `name` is passed to train.py as its Hydra `name`, so the
+# W&B run name, artifact name, and checkpoint dir all follow it. Checkpoints go
+# to checkpoints/<name>, or <checkpoint_root>/<name> when checkpoint_root is set
+# (e.g. a larger data drive on the training box).
 
 vram_per_run_gb: 10
+# checkpoint_root: /path/to/large/drive/checkpoints
 
 experiments:
   - name: dit_cross_attn_disassemble
     overrides:
       - model=dit_cross_attn
       - task=metaworld_disassemble
-      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/dit-cross-attn-single-task/dit_cross_attn_disassemble/
 
   - name: dit_cross_attn_assembly
     overrides:
       - model=dit_cross_attn
       - task=metaworld_assembly
-      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/dit-cross-attn-single-task/dit_cross_attn_assembly/
+
   - name: dit_cross_attn_hammer
     overrides:
       - model=dit_cross_attn
       - task=metaworld_hammer
-      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/dit-cross-attn-single-task/dit_cross_attn_hammer/
+
   - name: dit_cross_attn_drawer_close
     overrides:
       - model=dit_cross_attn
       - task=metaworld_drawer_close
-      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/dit-cross-attn-single-task/dit_cross_attn_drawer_close/
 
   # - name: dit_cross_attn_button_press
   #   overrides:
   #     - model=dit_cross_attn
   #     - task=metaworld_button_press
-  #     - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/dit-cross-attn-single-task/dit_cross_attn_button_press/
 
   - name: dit_cross_attn_drawer_open
     overrides:
       - model=dit_cross_attn
       - task=metaworld_drawer_open
-      - trainer.checkpoint.checkpoint_dir=/mnt/DataDrive/suhrudh/checkpoints/dit-cross-attn-single-task/dit_cross_attn_drawer_open/
