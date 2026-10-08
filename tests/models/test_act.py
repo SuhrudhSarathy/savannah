@@ -1,4 +1,3 @@
-# tests/test_act_policy.py
 import pytest
 import torch
 
@@ -8,7 +7,7 @@ from savannah.models.act import (
     ACTPolicy,
     ObservationKey,
 )
-from savannah.models.backbones.resnet_backbone import ResNetBackbone
+from savannah.models.backbones import DummyVisionBackbone
 from savannah.models.encoders import VisionEncoder
 
 B, H, W = 2, 96, 96
@@ -23,7 +22,7 @@ def _make_policy(num_cameras=1):
     chunk_size = CHUNK_SIZE
     encoder_layers = 1
 
-    backbone = ResNetBackbone(out_channels=32)
+    backbone = DummyVisionBackbone(out_channels=32)
     # ACTPolicy has no obs-history dim, so the vision encoder is always
     # constructed with num_obs=1.
     vision_encoder = VisionEncoder(

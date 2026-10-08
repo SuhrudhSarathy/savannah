@@ -2,6 +2,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from savannah.models.backbones import DummyVisionBackbone
 from savannah.models.encoders.vision_encoder import VisionEncoder
 
 B, H, W = 2, 32, 32
@@ -12,67 +13,22 @@ SPATIAL_TOKENS = 4
 ATTN_POOLING_NUM_QUERIES = 3
 
 
-class PoolingStubBackbone(nn.Module):
-    """Lightweight pooling backbone stand-in (tokens_per_image=1, 2D output)."""
-
-    def __init__(self, out_channels: int = BACKBONE_OUT):
-        super().__init__()
-        self._out_channels = out_channels
-        self.conv = nn.Conv2d(3, out_channels, kernel_size=3, padding=1)
-        self.pool = nn.AdaptiveAvgPool2d(1)
-
-    @property
-    def out_channels(self) -> int:
-        return self._out_channels
-
-    @property
-    def tokens_per_image(self) -> int:
-        return 1
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # (B, 3, H, W) -> (B, out_channels)
-        return self.pool(self.conv(x)).flatten(1)
-
-
-class SpatialStubBackbone(nn.Module):
-    """Lightweight multi-token backbone stand-in (tokens_per_image>1, 3D output)."""
-
-    def __init__(
-        self, out_channels: int = BACKBONE_OUT, tokens_per_image: int = SPATIAL_TOKENS
-    ):
-        super().__init__()
-        self._out_channels = out_channels
-        self._tokens_per_image = tokens_per_image
-        self.conv = nn.Conv2d(3, out_channels, kernel_size=3, padding=1)
-        self.pool = nn.AdaptiveAvgPool2d(int(tokens_per_image**0.5))
-
-    @property
-    def out_channels(self) -> int:
-        return self._out_channels
-
-    @property
-    def tokens_per_image(self) -> int:
-        return self._tokens_per_image
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # (B, 3, H, W) -> (B, tokens_per_image, out_channels)
-        features = self.pool(self.conv(x))
-        b, c, h, w = features.shape
-        return features.view(b, c, h * w).transpose(1, 2)
-
-
 def make_images(num_cameras=NUM_CAMERAS, num_obs=NUM_OBS, batch=B):
     return [torch.randn(batch, num_obs, 3, H, W) for _ in range(num_cameras)]
 
 
 @pytest.fixture
 def pooling_backbone():
-    return PoolingStubBackbone()
+    # tokens_per_image=1, 2D output
+    return DummyVisionBackbone(out_channels=BACKBONE_OUT)
 
 
 @pytest.fixture
 def spatial_backbone():
-    return SpatialStubBackbone()
+    # tokens_per_image>1, 3D output
+    return DummyVisionBackbone(
+        out_channels=BACKBONE_OUT, tokens_per_image=SPATIAL_TOKENS
+    )
 
 
 @pytest.fixture

@@ -5,38 +5,11 @@ sibling test_sim_eval_*.py files.
 """
 
 import torch
-import torch.nn as nn
 
-from savannah.models.backbones import VisionFeatureExtractor
+from savannah.models.backbones import DummyVisionBackbone
 from savannah.models.dit_cross_attn import DITCrossAttnPolicy
 from savannah.models.encoders import VisionEncoder
 from savannah.objectives import FlowMatchingObjective
-
-
-class _TinyBackbone(VisionFeatureExtractor):
-    """Minimal, untrained vision backbone — fast forward pass, no pretrained
-    weights to download. Only meant to exercise the eval rollout loop
-    end-to-end, not to produce a policy with any real skill.
-    """
-
-    def __init__(self, out_channels: int = 8):
-        super().__init__()
-        self._out_channels = out_channels
-        self.net = nn.Sequential(
-            nn.Conv2d(3, out_channels, kernel_size=4, stride=4),
-            nn.AdaptiveAvgPool2d(1),
-        )
-
-    @property
-    def out_channels(self) -> int:
-        return self._out_channels
-
-    @property
-    def tokens_per_image(self) -> int:
-        return 1
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x).flatten(1)  # (B, out_channels)
 
 
 def build_tiny_policy(
@@ -53,7 +26,7 @@ def build_tiny_policy(
     """
     embed_dim = 16
     vision_encoder = VisionEncoder(
-        _TinyBackbone(out_channels=embed_dim),
+        DummyVisionBackbone(out_channels=embed_dim),
         embed_dim=embed_dim,
         num_cameras=num_cameras,
         num_obs=1,

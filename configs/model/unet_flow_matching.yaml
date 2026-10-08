@@ -13,6 +13,8 @@ objective:
 vision_encoder:
   _target_: savannah.models.encoders.vision_encoder.VisionEncoder
   embed_dim: ${model.embed_dim}
+  num_cameras: ${model.num_cameras}
+  num_obs: ${model.num_obs}
   backbone:
     _target_: savannah.models.backbones.resnet_backbone.ResNetBackbone
     out_channels: 96

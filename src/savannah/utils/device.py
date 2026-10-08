@@ -6,6 +6,11 @@ from savannah.utils.log import logger
 
 
 def get_device():
+    if "SAVANNAH_DEVICE" in os.environ:
+        device = torch.device(os.environ["SAVANNAH_DEVICE"])
+        logger.info("Using device: {} (from SAVANNAH_DEVICE)", device)
+        return device
+
     device = torch.device("cpu")
     if torch.cuda.is_available():
         device = torch.device("cuda")

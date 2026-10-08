@@ -1,8 +1,8 @@
 import pytest
 import torch
-import torch.nn as nn
+from dummies import StubLanguageEncoder
 
-from savannah.models.backbones.resnet_backbone import ResNetBackbone
+from savannah.models.backbones import DummyVisionBackbone
 from savannah.models.dit_cross_attn import DiTCrossAttnBlock, DITCrossAttnPolicy
 from savannah.models.encoders import VisionEncoder
 from savannah.nn.rope import RoPESelfAttention
@@ -23,28 +23,31 @@ NUM_CAMERAS = 2
 NUM_OBS = 1
 
 
-class StubLanguageEncoder(nn.Module):
-    """Lightweight stand-in for LanguageEncoder (avoids downloading CLIP weights)."""
-
-    def __init__(self, embed_dim: int):
-        super().__init__()
-        self.embed_dim = embed_dim
-        self.proj = nn.Linear(1, embed_dim)
-
-    def forward(self, text_inputs: list[str]) -> torch.Tensor:
-        batch = len(text_inputs)
-        dummy = torch.ones(batch, 1, 1)
-        return self.proj(dummy)
+# Pooling (1 token/image, like ResNet + SpatialSoftmax) vs spatial (a token
+# grid, like DINOv3 patches) backbones take different paths through the
+# vision encoder and the policy's conditioning.
+TOKENS_PER_IMAGE = [1, 4]
 
 
-def _make_vision_encoder(num_obs=NUM_OBS):
-    backbone = ResNetBackbone(out_channels=32)
+@pytest.fixture(params=TOKENS_PER_IMAGE, ids=["pooled", "spatial"])
+def tokens_per_image(request):
+    return request.param
+
+
+def _make_vision_encoder(num_obs=NUM_OBS, tokens_per_image=1):
+    backbone = DummyVisionBackbone(out_channels=32, tokens_per_image=tokens_per_image)
     return VisionEncoder(
         backbone, embed_dim=EMBED_DIM, num_cameras=NUM_CAMERAS, num_obs=num_obs
     )
 
 
-def _make_policy(num_obs=NUM_OBS, objective=None, language_encoder=None, use_rope=True):
+def _make_policy(
+    num_obs=NUM_OBS,
+    objective=None,
+    language_encoder=None,
+    use_rope=True,
+    tokens_per_image=1,
+):
     policy = DITCrossAttnPolicy(
         embed_dim=EMBED_DIM,
         time_embed_dim=TIME_EMBED_DIM,
@@ -58,7 +61,9 @@ def _make_policy(num_obs=NUM_OBS, objective=None, language_encoder=None, use_rop
         action_horizon=ACTION_HORIZON,
         num_cameras=NUM_CAMERAS,
         use_rope=use_rope,
-        vision_encoder=_make_vision_encoder(num_obs=num_obs),
+        vision_encoder=_make_vision_encoder(
+            num_obs=num_obs, tokens_per_image=tokens_per_image
+        ),
         language_encoder=language_encoder,
         objective=objective or OverfitObjective(),
     )
@@ -67,8 +72,8 @@ def _make_policy(num_obs=NUM_OBS, objective=None, language_encoder=None, use_rop
 
 
 @pytest.fixture
-def policy():
-    return _make_policy()
+def policy(tokens_per_image):
+    return _make_policy(tokens_per_image=tokens_per_image)
 
 
 @pytest.fixture
@@ -87,8 +92,11 @@ def policy_spe():
 
 
 @pytest.fixture
-def policy_with_language():
-    return _make_policy(language_encoder=StubLanguageEncoder(EMBED_DIM))
+def policy_with_language(tokens_per_image):
+    return _make_policy(
+        language_encoder=StubLanguageEncoder(EMBED_DIM),
+        tokens_per_image=tokens_per_image,
+    )
 
 
 def make_obs(num_cameras=NUM_CAMERAS, num_obs=NUM_OBS, with_language=False):

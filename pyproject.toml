@@ -58,3 +58,15 @@ ignore = ["E203", "E501", "B006", "RUF001", "RUF002", "RUF003"]
 "__init__.py" = ["E402", "F401", "F403"]
 "scripts/**" = ["E402"]
 "src/savannah/tasks/abc.py" = ["E402"]   # MUJOCO_GL must be set before mujoco imports
+"tests/**/*abc*.py" = ["E402"]   # importorskip("abc_sim") must run before importing savannah.tasks.abc
+
+# Test tiers are assigned by directory in tests/conftest.py; `-m ""` runs everything.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]   # tests/ for the shared tests/dummies.py
+addopts = "--strict-markers -m 'not smoke and not integration and not sim'"
+markers = [
+    "smoke: short end-to-end training runs through scripts/*.py (tests/smoke)",
+    "integration: real pretrained backbones / Hub datasets; downloads on first run",
+    "sim: rollouts in real simulators (tests/eval)",
+]

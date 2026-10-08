@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from savannah.models.backbones.resnet_backbone import ResNetBackbone
+from savannah.models.backbones import DummyVisionBackbone
 from savannah.models.dit_cross_attn import DITCrossAttnPolicy
 from savannah.models.encoders import VisionEncoder
 from savannah.objectives import OverfitObjective
@@ -20,7 +20,7 @@ NUM_CAMERAS = 1
 
 
 def build_tiny_policy() -> DITCrossAttnPolicy:
-    backbone = ResNetBackbone(out_channels=16)
+    backbone = DummyVisionBackbone(out_channels=16)
     vision_encoder = VisionEncoder(
         backbone, embed_dim=EMBED_DIM, num_cameras=NUM_CAMERAS, num_obs=1
     )

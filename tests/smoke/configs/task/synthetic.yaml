@@ -1,0 +1,20 @@
+# In-memory random data + a random-pixel env (tests/dummies.py), sized to
+# whatever model config it's paired with. Picked up by the smoke tests via
+# `--config-dir tests/smoke/configs task=synthetic`.
+_target_: dummies.SyntheticTask
+state_dim: ${model.state_dim}
+action_dim: ${model.action_dim}
+num_train_samples: 8
+num_val_samples: 4
+env_max_steps: 6
+config:
+  _target_: savannah.data.dataset.DataSetConfig
+  repo_id: synthetic
+  fps: 10
+  cameras: ["cam0", "cam1"]
+  obs_horizon: 2
+  action_horizon: ${model.action_horizon}
+  image_size: 32
+  batch_size: 2
+  num_workers: 0
+  augmentation: ${augmentation}

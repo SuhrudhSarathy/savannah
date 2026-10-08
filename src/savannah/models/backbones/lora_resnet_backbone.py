@@ -71,6 +71,16 @@ class LoRAConv2d(nn.Module):
             return self.original_conv(x) + self.lora_B(self.lora_A(x)) * self.scaling
 
 
+def _drop_legacy_resnet_keys(module, state_dict, prefix, *args):
+    """Checkpoints saved before LoRAResNetBackbone stopped holding the full
+    torchvision model carry an extra `resnet.*` copy of its weights. Every
+    tensor the model actually uses is also stored under `backbone.*`, so the
+    copy is redundant -- drop it so those checkpoints still load strictly."""
+    legacy_prefix = prefix + "resnet."
+    for key in [k for k in state_dict if k.startswith(legacy_prefix)]:
+        del state_dict[key]
+
+
 class LoRAResNetBackbone(VisionFeatureExtractor):
     def __init__(
         self,
@@ -87,11 +97,16 @@ class LoRAResNetBackbone(VisionFeatureExtractor):
         self.lora_rank = lora_rank
         self.lora_alpha = lora_alpha
 
-        self.resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+        # Keep only the feature extractor -- holding on to the full resnet as a
+        # submodule would leave its unused `fc` head and its original top-level
+        # `bn1` (replace_bn_with_gn only swaps the copy in self.backbone) as
+        # trainable params that never get a gradient.
+        resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
 
-        self.backbone = nn.Sequential(*list(self.resnet.children())[:-2])
+        self.backbone = nn.Sequential(*list(resnet.children())[:-2])
         self.replace_bn_with_gn(self.backbone)
         self.add_lora(self.backbone)
+        self.register_load_state_dict_pre_hook(_drop_legacy_resnet_keys)
 
         if use_spatial_softmax:
             self.spatial_softmax = SpatialSoftmax()

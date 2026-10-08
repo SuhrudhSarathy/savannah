@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from savannah.models.backbones.resnet_backbone import ResNetBackbone
+from savannah.models.backbones import DummyVisionBackbone
 from savannah.models.encoders import VisionEncoder
 from savannah.models.unet import UNetPolicy
 from savannah.objectives import FlowMatchingObjective, OverfitObjective
@@ -14,14 +14,25 @@ NUM_OBS = 1
 UNET_CHANNELS = [32, 64]
 
 
-def _make_vision_encoder(num_obs=NUM_OBS):
-    backbone = ResNetBackbone(out_channels=32)
+# Pooling (1 token/image, like ResNet + SpatialSoftmax) vs spatial (a token
+# grid, like DINOv3 patches) backbones take different paths through the
+# vision encoder and the policy's conditioning.
+TOKENS_PER_IMAGE = [1, 4]
+
+
+@pytest.fixture(params=TOKENS_PER_IMAGE, ids=["pooled", "spatial"])
+def tokens_per_image(request):
+    return request.param
+
+
+def _make_vision_encoder(num_obs=NUM_OBS, tokens_per_image=1):
+    backbone = DummyVisionBackbone(out_channels=32, tokens_per_image=tokens_per_image)
     return VisionEncoder(
         backbone, embed_dim=EMBED_DIM, num_cameras=NUM_CAMERAS, num_obs=num_obs
     )
 
 
-def _make_policy(num_obs=NUM_OBS, objective=None):
+def _make_policy(num_obs=NUM_OBS, objective=None, tokens_per_image=1):
     policy = UNetPolicy(
         embed_dim=EMBED_DIM,
         unet_channels=UNET_CHANNELS,
@@ -31,7 +42,9 @@ def _make_policy(num_obs=NUM_OBS, objective=None):
         action_dim=ACTION_DIM,
         action_horizon=ACTION_HORIZON,
         num_cameras=NUM_CAMERAS,
-        vision_encoder=_make_vision_encoder(num_obs=num_obs),
+        vision_encoder=_make_vision_encoder(
+            num_obs=num_obs, tokens_per_image=tokens_per_image
+        ),
         objective=objective or OverfitObjective(),
     )
     policy.eval()
@@ -39,8 +52,8 @@ def _make_policy(num_obs=NUM_OBS, objective=None):
 
 
 @pytest.fixture
-def policy():
-    return _make_policy()
+def policy(tokens_per_image):
+    return _make_policy(tokens_per_image=tokens_per_image)
 
 
 @pytest.fixture

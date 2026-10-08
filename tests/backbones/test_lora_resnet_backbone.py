@@ -1,6 +1,7 @@
 import pytest
 import torch
 import torch.nn as nn
+import torchvision
 
 from savannah.models.backbones.lora_resnet_backbone import (
     LoRAConv2d,
@@ -192,3 +193,44 @@ def test_merge_unmerge_round_trip(backbone):
     with torch.no_grad():
         out_unmerged = backbone(x)
     assert torch.allclose(out_before, out_unmerged, atol=1e-3)
+
+
+def test_every_trainable_param_receives_gradient(backbone):
+    # Regression: the backbone used to keep the full torchvision resnet as a
+    # submodule, leaving its unused `fc` head and original `bn1` as trainable
+    # params that never got a gradient.
+    backbone.train()
+    backbone(torch.randn(B, 3, H, W)).pow(2).mean().backward()
+
+    missing_grad = [
+        name
+        for name, p in backbone.named_parameters()
+        if p.requires_grad and p.grad is None
+    ]
+    assert not missing_grad, f"parameters with no gradient: {missing_grad}"
+    assert not any(
+        name.startswith("resnet.") for name, _ in backbone.named_parameters()
+    )
+
+
+def test_loads_legacy_checkpoint_with_resnet_keys(backbone):
+    # Checkpoints from before that fix also stored a redundant `resnet.*` copy
+    # of the torchvision weights; they must still load strictly, including
+    # when the backbone is nested inside a policy (non-empty prefix).
+    wrapper = nn.Module()
+    wrapper.backbone = backbone
+    state_dict = wrapper.state_dict()
+    legacy = {
+        **state_dict,
+        **{
+            f"backbone.resnet.{k}": v
+            for k, v in torchvision.models.resnet18().state_dict().items()
+        },
+    }
+
+    fresh = nn.Module()
+    fresh.backbone = LoRAResNetBackbone(out_channels=OUT_CHANNELS, image_size=H)
+    fresh.load_state_dict(legacy, strict=True)
+
+    for key, value in fresh.state_dict().items():
+        assert torch.equal(value, state_dict[key]), key

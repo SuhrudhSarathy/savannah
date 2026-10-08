@@ -13,6 +13,10 @@ import gymnasium as gym
 import pytest
 from policy_helpers import build_tiny_policy
 
+# The ABC sim is an optional, separately installed package -- skip (rather
+# than error at collection) when it isn't, before savannah.tasks.abc imports it.
+pytest.importorskip("abc_sim")
+
 from savannah.data.dataset import DataSetConfig
 from savannah.tasks.abc import ABCPutBottlesTask
 from savannah.utils.device import get_device
