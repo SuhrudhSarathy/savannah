@@ -8,7 +8,7 @@ from savannah.models.policy import Policy
 from savannah.nn.positional_embeddings import SinusoidalPositionalEncoding
 from savannah.nn.transformer import TransformerDecoder, TransformerEncoder
 from savannah.utils import ObservationKey
-from savannah.utils.policy import PolicyOutput
+from savannah.utils.policy_output import PolicyOutput
 
 
 class ACT_CVAE_Encoder(nn.Module):

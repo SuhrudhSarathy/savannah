@@ -71,8 +71,7 @@ def take_optimizer_step(trainer: PolicyTrainer):
             torch.randn(2, 1, 3, 64, 64) for _ in range(NUM_CAMERAS)
         ],
         ObservationKey.state: torch.randn(2, 1, STATE_DIM),
-        ObservationKey.time: torch.rand(2) * 100.0,
-        ObservationKey.actions: torch.randn(2, ACTION_HORIZON, ACTION_DIM),
+        ObservationKey.gt_actions: torch.randn(2, ACTION_HORIZON, ACTION_DIM),
     }
     loss = trainer.policy.compute_loss(batch)
     loss.backward()

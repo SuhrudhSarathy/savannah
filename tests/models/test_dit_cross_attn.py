@@ -105,7 +105,6 @@ def make_obs(num_cameras=NUM_CAMERAS, num_obs=NUM_OBS, with_language=False):
             torch.randn(B, num_obs, 3, H, W) for _ in range(num_cameras)
         ],
         ObservationKey.state: torch.randn(B, num_obs, STATE_DIM),
-        ObservationKey.time: torch.rand(B) * 100.0,
         ObservationKey.actions: torch.randn(B, ACTION_HORIZON, ACTION_DIM),
         ObservationKey.gt_actions: torch.randn(B, ACTION_HORIZON, ACTION_DIM),
     }

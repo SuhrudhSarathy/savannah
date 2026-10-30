@@ -238,7 +238,6 @@ def make_obs(with_language: bool, requires_grad: bool = False):
         ObservationKey.state: torch.randn(
             B, NUM_OBS, STATE_DIM, requires_grad=requires_grad
         ),
-        ObservationKey.time: (torch.rand(B) * 100.0).requires_grad_(requires_grad),
         ObservationKey.actions: torch.randn(
             B, ACTION_HORIZON, ACTION_DIM, requires_grad=requires_grad
         ),
@@ -268,7 +267,11 @@ def test_backward_pass_populates_gradients(policy, backbone_spec, language_encod
     policy.train()
     obs = make_obs(with_language=language_encoder is not None, requires_grad=True)
     policy.zero_grad(set_to_none=True)
-    loss = policy.compute_loss(obs)
+    # Encode + objective by hand (what policy.compute_loss does) so the
+    # timestep and the action input are leaf tensors we can check for grad.
+    t = torch.rand(B, requires_grad=True)
+    cond = policy.encode_obs(obs)
+    loss = policy.objective.compute_loss(policy, cond, obs[ObservationKey.actions], t)
     loss.backward()
 
     missing_grad = [
@@ -285,7 +288,7 @@ def test_backward_pass_populates_gradients(policy, backbone_spec, language_encod
         name
         for name, tensor in {
             "state": obs[ObservationKey.state],
-            "time": obs[ObservationKey.time],
+            "time": t,
             "actions": obs[ObservationKey.actions],
         }.items()
         if tensor.grad is None

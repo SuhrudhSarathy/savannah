@@ -4,13 +4,12 @@ from einops import rearrange, repeat
 
 from savannah.models.encoders import StateEncoder, VisionEncoder
 from savannah.models.encoders.language_encoder import LanguageEncoder
-from savannah.models.policy import Policy
+from savannah.models.policy import DenoisingPolicy
 from savannah.nn.time_embedding import TimeEmbedding
 from savannah.objectives import PolicyObjective
 from savannah.utils.debug import debug_stat
 from savannah.utils.log import logger
 from savannah.utils.observation import ObservationKey
-from savannah.utils.policy import PolicyOutput
 
 
 class ConvBlock(nn.Module):
@@ -239,7 +238,7 @@ class Decoder(nn.Module):
         return x
 
 
-class UNetPolicy(Policy):
+class UNetPolicy(DenoisingPolicy):
     def __init__(
         self,
         embed_dim: int,
@@ -339,24 +338,16 @@ class UNetPolicy(Policy):
             unet_channels[0], self.action_dim, kernel_size=3, padding=1
         )
 
-    def forward(self, obs: dict[str, torch.Tensor], *args, **kwargs) -> PolicyOutput:
+    def encode_obs(self, obs: dict[str, torch.Tensor]) -> torch.Tensor:
         x_img = obs[ObservationKey.images]
         x_state = obs[ObservationKey.state]
-        x_time = obs[ObservationKey.time]
         x_language = obs.get(ObservationKey.language, None)
-
-        # Get noisy actions from kwargs
-        noisy_actions = kwargs.get("noisy_actions", None)
-        if noisy_actions is None:
-            raise AssertionError("Pass noisy action for the model to run")
 
         for cam_idx, img in enumerate(x_img):
             debug_stat(f"x_img[{cam_idx}] (raw)", img)
         debug_stat("x_state (raw)", x_state)
-        debug_stat("x_time (raw)", x_time)
         if x_language is not None:
             logger.debug("x_language (raw) {}", x_language)
-        debug_stat("noisy_actions (raw)", noisy_actions)
 
         if x_language is not None:
             if self.language_encoder is None:
@@ -367,14 +358,6 @@ class UNetPolicy(Policy):
                 # (B, xx, embed_dim)
                 x_language = self.language_encoder(x_language)
                 debug_stat("x_lang", x_language)
-
-        # (B,) -> (B, 1) optionally
-        if x_time.dim() == 1:
-            x_time = x_time.unsqueeze(1)
-
-        # (B, 1) -> (B, embed_dim)
-        x_time_cond = self.time_embedding(x_time)
-        debug_stat("x_time_cond", x_time_cond)
 
         # (B, num_cameras * num_obs, embed_dim) -> (B, num_cameras * num_obs * embed_dim)
         x_cam_tokens = self.vision_encoder(x_img)
@@ -396,20 +379,38 @@ class UNetPolicy(Policy):
             self.n_language_tokens,
         )
 
-        x_cond_parts = [x_time_cond, x_cam_cond, x_state_cond]
+        x_cond_parts = [x_cam_cond, x_state_cond]
         if self.language_encoder is not None:
             x_language_cond = rearrange(x_language, "b n d -> b (n d)")
             debug_stat("x_language_cond", x_language_cond)
             x_cond_parts.append(x_language_cond)
 
+        # (B, condition_dim - time tokens). Time is prepended in denoise, before
+        # the projection MLP.
+        return torch.cat(x_cond_parts, dim=-1)
+
+    def denoise(
+        self, x_t: torch.Tensor, t: torch.Tensor, cond: torch.Tensor
+    ) -> torch.Tensor:
+        debug_stat("x_time (raw)", t)
+        debug_stat("noisy_actions (raw)", x_t)
+
+        # (B,) -> (B, 1) optionally
+        if t.dim() == 1:
+            t = t.unsqueeze(1)
+
+        # (B, 1) -> (B, embed_dim)
+        x_time_cond = self.time_embedding(t)
+        debug_stat("x_time_cond", x_time_cond)
+
         # (B, condition_dim)
-        x_cond = torch.cat(x_cond_parts, dim=-1)
+        x_cond = torch.cat([x_time_cond, cond], dim=-1)
         debug_stat("x_cond (pre-mlp)", x_cond)
         x_cond = self.cond_projection_mlp(x_cond)
         debug_stat("x_cond (post-mlp)", x_cond)
 
         # (B, action_horizon, action_dim) -> (B, action_dim, action_horizon)
-        x = rearrange(noisy_actions, "b t a -> b a t")
+        x = rearrange(x_t, "b t a -> b a t")
         x = self.init_conv(x)
         debug_stat("x (init_conv)", x)
 
@@ -435,4 +436,4 @@ class UNetPolicy(Policy):
         x_out_action = rearrange(x, "b a t -> b t a")
         debug_stat("x_out_action", x_out_action)
 
-        return PolicyOutput(actions=x_out_action)
+        return x_out_action

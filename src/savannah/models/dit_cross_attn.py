@@ -4,7 +4,7 @@ from einops import rearrange
 
 from savannah.models.encoders import StateEncoder, VisionEncoder
 from savannah.models.encoders.language_encoder import LanguageEncoder
-from savannah.models.policy import Policy
+from savannah.models.policy import DenoisingPolicy
 from savannah.nn.cross_attention import CrossAttention
 from savannah.nn.positional_embeddings import get_sinusoidal_position_embedding
 from savannah.nn.rope import RoPESelfAttention
@@ -14,7 +14,6 @@ from savannah.objectives import PolicyObjective
 from savannah.utils.debug import debug_stat
 from savannah.utils.log import logger
 from savannah.utils.observation import ObservationKey
-from savannah.utils.policy import PolicyOutput
 
 
 class FFNBlock(nn.Module):
@@ -127,7 +126,7 @@ class DiTCrossAttnBlock(nn.Module):
         return x
 
 
-class DITCrossAttnPolicy(Policy):
+class DITCrossAttnPolicy(DenoisingPolicy):
     def __init__(
         self,
         embed_dim: int,
@@ -220,25 +219,17 @@ class DITCrossAttnPolicy(Policy):
         # Learnable position embeddings for kv_tokens
         self.learnable_pos_embeddings = nn.Embedding(512, self.embed_dim)
 
-    def forward(self, obs: dict[str, torch.Tensor], *args, **kwargs) -> PolicyOutput:
+    def encode_obs(self, obs: dict[str, torch.Tensor]) -> torch.Tensor:
         x_img = obs[ObservationKey.images]
         x_state = obs[ObservationKey.state]
-        x_time = obs[ObservationKey.time]
         x_language = obs.get(ObservationKey.language, None)
 
         for cam_idx, img in enumerate(x_img):
             debug_stat(f"x_img[{cam_idx}] (raw)", img)
         debug_stat("x_state (raw)", x_state)
-        debug_stat("x_time (raw)", x_time)
 
         if x_language is not None:
             logger.debug("x_language (raw) {}", x_language)
-
-        # Get noisy actions from kwargs
-        noisy_actions = kwargs.get("noisy_actions", None)
-        if noisy_actions is None:
-            raise AssertionError("Pass noisy action for the model to run")
-        debug_stat("noisy_actions (raw)", noisy_actions)
 
         ## ---------------------- Vision Tokens ------------------------ ##
         # (B, T, embed_dim)
@@ -296,23 +287,6 @@ class DITCrossAttnPolicy(Policy):
 
         ## ------------------------------------------------------------- ##
 
-        # (B,) -> (B, 1) optionally
-        if len(x_time.shape) == 1:
-            x_time = x_time.unsqueeze(1)
-
-        # (B, 1) -> (B, 1, embed_dim)
-        x_time = self.timestep_embedding(x_time).unsqueeze(1)
-        debug_stat("x_time (embedded)", x_time)
-
-        # Project the noisy actions to embeding space
-        # (B, N_obs, action_dim) -> (B, N_obs, embed_dim)
-        x_noisy_actions = self.action_embedding(noisy_actions)
-        debug_stat("x_noisy_actions (embedded)", x_noisy_actions)
-
-        if self.use_spe:
-            x_noisy_actions = x_noisy_actions + self.action_time_embedding
-            debug_stat("x_noisy_actions (+ pos embed)", x_noisy_actions)
-
         x_kv_tokens = []
         if x_language is None:
             x_kv_tokens = torch.cat([x_cam_tokens, x_state_tokens], dim=1)
@@ -328,14 +302,39 @@ class DITCrossAttnPolicy(Policy):
         pos_embeddings = self.learnable_pos_embeddings(positions)
         x_kv_tokens = x_kv_tokens + pos_embeddings
 
+        return x_kv_tokens
+
+    def denoise(
+        self, x_t: torch.Tensor, t: torch.Tensor, cond: torch.Tensor
+    ) -> torch.Tensor:
+        debug_stat("x_time (raw)", t)
+        debug_stat("noisy_actions (raw)", x_t)
+
+        # (B,) -> (B, 1) optionally
+        if len(t.shape) == 1:
+            t = t.unsqueeze(1)
+
+        # (B, 1) -> (B, 1, embed_dim)
+        x_time = self.timestep_embedding(t).unsqueeze(1)
+        debug_stat("x_time (embedded)", x_time)
+
+        # Project the noisy actions to embeding space
+        # (B, N_obs, action_dim) -> (B, N_obs, embed_dim)
+        x_noisy_actions = self.action_embedding(x_t)
+        debug_stat("x_noisy_actions (embedded)", x_noisy_actions)
+
+        if self.use_spe:
+            x_noisy_actions = x_noisy_actions + self.action_time_embedding
+            debug_stat("x_noisy_actions (+ pos embed)", x_noisy_actions)
+
         # Time tokens for AdaLN conditioning
         x_time_tokens = rearrange(x_time, "b t d -> b 1 (t d)")
 
         x_dec_out = x_noisy_actions
         for dec in self.decoder:
-            x_dec_out = dec(x_dec_out, x_kv_tokens, x_time_tokens)
+            x_dec_out = dec(x_dec_out, cond, x_time_tokens)
         debug_stat("x_dec_out", x_dec_out)
 
         x_action = self.action_reprojection(x_dec_out)
         debug_stat("x_action", x_action)
-        return PolicyOutput(actions=x_action)
+        return x_action
