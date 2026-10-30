@@ -162,7 +162,7 @@ class DITCrossAttnPolicy(DenoisingPolicy):
         self.use_spe: bool = not self.use_rope
 
         self.state_encoder = StateEncoder(self._state_dim, self.embed_dim)
-        self.language_encoder: None | LanguageEncoder = language_encoder
+        self.language_encoder: LanguageEncoder | None = language_encoder
         if language_encoder is not None:
             logger.debug("Initialised Language Encoder into the model")
 

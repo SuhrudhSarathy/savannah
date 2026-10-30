@@ -152,6 +152,8 @@ class MultiCameraObsWrapper(ObservationWrapper):
 
 
 class MetaworldTask(BaseRobotTask):
+    action_space = "ee_delta_xyz_gripper"
+
     def __init__(self, config, device: torch.device):
         super().__init__(config, device)
 
@@ -181,6 +183,23 @@ class MetaworldTask(BaseRobotTask):
         return MultiCameraObsWrapper(
             env, camera_names=self.config.cameras, img_size=img_size
         )
+
+    def action_limits(self) -> tuple[list[float], list[float]]:
+        return _ACTION_LOW.tolist(), _ACTION_HIGH.tolist()
+
+    def normalization_stats(self) -> dict:
+        return {
+            "state": {
+                "type": "min_max",
+                "low": _STATE_LOW.tolist(),
+                "high": _STATE_HIGH.tolist(),
+            },
+            "actions": {
+                "type": "min_max",
+                "low": _ACTION_LOW.tolist(),
+                "high": _ACTION_HIGH.tolist(),
+            },
+        }
 
     def _normalize_state(self, state: torch.Tensor) -> torch.Tensor:
         return (state - self._state_low) / (self._state_high - self._state_low) * 2 - 1

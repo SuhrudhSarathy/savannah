@@ -54,7 +54,7 @@ def main(cfg: DictConfig) -> None:
         run_name=cfg.wandb.run_name,
     )
 
-    trainer = PolicyTrainer(policy, task, exp_logger, train_config, device)
+    trainer = PolicyTrainer(policy, task, exp_logger, train_config, device, cfg)
 
     if train_config.checkpoint.resume_from:
         trainer.load_checkpoint(train_config.checkpoint.resume_from)

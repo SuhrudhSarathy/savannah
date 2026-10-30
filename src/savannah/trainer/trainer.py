@@ -4,9 +4,11 @@ from dataclasses import dataclass, field
 
 import torch
 from hydra.core.config_store import ConfigStore
+from omegaconf import DictConfig
 from torch.optim import AdamW
 from tqdm import tqdm
 
+from savannah.bundle import BUNDLE_SUFFIX, read_bundle, save_bundle
 from savannah.models.policy import Policy
 from savannah.tasks import BaseRobotTask
 from savannah.trainer.ema import EMA
@@ -64,12 +66,14 @@ class PolicyTrainer:
         logger: ExperimentLogger,
         config: TrainConfig,
         device: torch.device,
+        run_cfg: DictConfig,
     ):
         self.policy = policy.to(device)
         self.task = task
         self.logger = logger
         self.config = config
         self.device = device
+        self.run_cfg = run_cfg
 
         # Setup Optimizer
         vision_params = []
@@ -116,10 +120,9 @@ class PolicyTrainer:
         os.makedirs(self.config.checkpoint.checkpoint_dir, exist_ok=True)
 
     def save_checkpoint(self, name: str, success_rate: float):
-        """Saves both the training weights and the EMA shadow weights."""
-        checkpoint = {
+        """Saves a bundle with the EMA weights and everything needed to resume."""
+        training_state = {
             "model_state_dict": self.policy.state_dict(),
-            "ema_state_dict": self.ema.shadow.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "scheduler_state_dict": self.scheduler.state_dict(),
             "global_step": self.global_step,
@@ -131,22 +134,32 @@ class PolicyTrainer:
         step_dir = os.path.join(
             self.config.checkpoint.checkpoint_dir, str(self.global_step)
         )
-        os.makedirs(step_dir, exist_ok=True)
-        torch.save(checkpoint, os.path.join(step_dir, f"{name}.ckpt"))
+        self._write_bundle(os.path.join(step_dir, name), training_state)
 
         # Rolling mirror of the most recent checkpoint of each kind, for
         # resuming/uploading without knowing which step it was saved at.
         latest_dir = os.path.join(self.config.checkpoint.checkpoint_dir, "latest")
-        os.makedirs(latest_dir, exist_ok=True)
-        torch.save(checkpoint, os.path.join(latest_dir, f"{name}.ckpt"))
+        self._write_bundle(os.path.join(latest_dir, name), training_state)
+
+    def _write_bundle(self, stem: str, training_state: dict):
+        save_bundle(
+            stem + BUNDLE_SUFFIX,
+            self.run_cfg,
+            self.task,
+            self.ema.shadow.state_dict(),
+            training_state=training_state,
+        )
 
     def load_checkpoint(self, path: str):
-        """Loads a checkpoint saved by save_checkpoint() and restores full training state."""
-        logger.info("Resuming training from checkpoint: {}", path)
-        checkpoint = torch.load(path, map_location=self.device)
+        """Loads a bundle saved by save_checkpoint() and restores full training state."""
+        logger.info("Resuming training from bundle: {}", path)
+        contents = read_bundle(path)
+        checkpoint = contents.training_state
+        if checkpoint is None:
+            raise ValueError(f"{path} has no training state to resume from")
 
         self.policy.load_state_dict(checkpoint["model_state_dict"])
-        self.ema.shadow.load_state_dict(checkpoint["ema_state_dict"])
+        self.ema.shadow.load_state_dict(contents.ema_weights)
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         self.global_step = checkpoint["global_step"]
@@ -172,7 +185,7 @@ class PolicyTrainer:
 
         def _sigint_handler(sig, frame):
             logger.warning(
-                "Interrupted at step {} — saving latest.ckpt…", self.global_step
+                "Interrupted at step {} — saving latest.bundle…", self.global_step
             )
             self.save_checkpoint("latest", self.best_val_loss)
             self.logger.finish()
@@ -307,9 +320,9 @@ class PolicyTrainer:
         pbar.close()
 
         checkpoint_aliases = {
-            "best_model.ckpt": "best",
-            "best_model_success.ckpt": "best_success",
-            "latest.ckpt": "latest",
+            "best_model.bundle": "best",
+            "best_model_success.bundle": "best_success",
+            "latest.bundle": "latest",
         }
 
         if self.logger.enable_model_checkpoint:

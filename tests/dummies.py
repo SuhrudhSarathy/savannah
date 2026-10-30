@@ -10,6 +10,7 @@ For a vision backbone stand-in, use savannah.models.backbones.DummyVisionBackbon
 """
 
 from collections import deque
+from typing import ClassVar
 
 import gymnasium as gym
 import numpy as np
@@ -71,6 +72,9 @@ class _SyntheticDataset(Dataset):
 
 class SyntheticEnv(gym.Env):
     """Random-pixel env that terminates after `max_steps`. Never succeeds."""
+
+    render_mode = "rgb_array"
+    metadata: ClassVar[dict] = {"render_modes": ["rgb_array"], "render_fps": 10}
 
     def __init__(
         self, cameras: list[str], image_size: int, state_dim: int, max_steps: int
@@ -202,3 +206,6 @@ class SyntheticTask(BaseRobotTask):
 
     def postprocess_action(self, action_tensor: torch.Tensor) -> np.ndarray:
         return action_tensor.float().cpu().numpy().reshape(-1)
+
+    def postprocess_chunk(self, actions: torch.Tensor) -> None:
+        return None

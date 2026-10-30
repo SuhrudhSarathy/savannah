@@ -19,6 +19,8 @@ COLORS = ["red", "green", "blue"]
 
 
 class ManiSkillColorMatchingTask(BaseRobotTask):
+    action_space = "pd_ee_delta_pose"
+
     def __init__(self, config, device: torch.device):
         super().__init__(config, device)
         self._action_low = torch.tensor(_ACTION_LOW, device=device)
@@ -35,6 +37,19 @@ class ManiSkillColorMatchingTask(BaseRobotTask):
             control_mode="pd_ee_delta_pose",
             render_mode=render_mode,
         )
+
+    def action_limits(self) -> tuple[list[float], list[float]]:
+        return _ACTION_LOW.tolist(), _ACTION_HIGH.tolist()
+
+    def normalization_stats(self) -> dict:
+        return {
+            "state": {"type": "identity"},
+            "actions": {
+                "type": "min_max",
+                "low": _ACTION_LOW.tolist(),
+                "high": _ACTION_HIGH.tolist(),
+            },
+        }
 
     def _normalize_action(self, action: torch.Tensor) -> torch.Tensor:
         return (action - self._action_low) / (

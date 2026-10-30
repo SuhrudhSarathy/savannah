@@ -1,15 +1,10 @@
-defaults:
-  - model: dit_cross_attn
-  - task: metaworld_button_press
-  - augmentation: default
-  - _self_
-
-checkpoint_path: null # local checkpoint: pass via CLI: checkpoint_path=path/to/model.ckpt
+# model and task come from the bundle, so eval takes no model=/task= overrides.
+bundle_path: null # local bundle: pass via CLI: bundle_path=path/to/model.bundle
 wandb_artifact: null # OR pull from W&B: wandb_artifact=savannah/flow_matching_pusht:best
-use_ema: true # load ema_state_dict instead of model_state_dict
+use_ema: true # load the EMA weights instead of the raw training weights
 num_episodes: 1
 execute_steps: 16 # how many actions to execute per chunk (receding horizon)
-video_folder: ./eval_videos/${hydra:runtime.choices.model}_${hydra:runtime.choices.task}
+video_folder: null # defaults to ./eval_videos/<name the bundle was trained under>
 episode_index: 0 # which dataset episode to inspect (used by eval_single_episode.py)
 pick_color: null # ManiSkill ColorMatching only: red/green/blue. If null, chosen randomly each episode.
 place_color: null # ManiSkill ColorMatching only: red/green/blue. If null, chosen randomly each episode.

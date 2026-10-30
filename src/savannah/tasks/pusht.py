@@ -10,10 +10,20 @@ from savannah.utils.observation import ObservationKey
 
 
 class PushTTask(BaseRobotTask):
+    action_space = "absolute_xy_pixels"
+
     def _make_env(self, render_mode: str) -> gym.Env:
         return gym.make(
             "gym_pusht/PushT-v0", obs_type="pixels_agent_pos", render_mode=render_mode
         )
+
+    def action_limits(self) -> tuple[list[float], list[float]]:
+        return [0.0, 0.0], [512.0, 512.0]
+
+    def normalization_stats(self) -> dict:
+        # normalized = (raw - offset) / scale
+        stats = {"type": "offset_scale", "offset": 256.0, "scale": 512.0}
+        return {"state": stats, "actions": stats}
 
     def format_batch(self, batch: dict, step: int | None = None) -> dict:
         images = batch["observation.image"].to(self.device)

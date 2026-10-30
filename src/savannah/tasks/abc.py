@@ -436,10 +436,25 @@ class ABCPutBottlesTask(BaseRobotTask):
     identical between training and rollout.
     """
 
+    action_space = "joint_position"
+
     def __init__(self, config, device: torch.device):
         super().__init__(config, device)
         self._norm_stats: Optional[Dict[str, Dict[str, np.ndarray]]] = None
         self._prompt: Optional[str] = None
+
+    def action_limits(self) -> Tuple[List[float], List[float]]:
+        return ACTION_LOW.tolist(), ACTION_HIGH.tolist()
+
+    def normalization_stats(self) -> Dict[str, Any]:
+        return {
+            split: {
+                "type": "z_score",
+                "mean": stats["mean"].tolist(),
+                "std": stats["std"].tolist(),
+            }
+            for split, stats in self._get_norm_stats().items()
+        }
 
     def _get_norm_stats(self) -> Dict[str, Dict[str, np.ndarray]]:
         if self._norm_stats is None:

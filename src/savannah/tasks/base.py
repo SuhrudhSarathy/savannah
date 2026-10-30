@@ -11,6 +11,9 @@ from savannah.data.dataset import DataSetConfig, LerobotDatasetWrapper
 
 
 class BaseRobotTask(ABC):
+    # What the env's actions mean, recorded in policy bundles.
+    action_space: str = "unknown"
+
     def __init__(self, config: "DataSetConfig", device: torch.device):
         self.config = config
         self.device = device
@@ -99,6 +102,17 @@ class BaseRobotTask(ABC):
         the raw physics values [0, 512] expected by `env.step()`.
         """
         ...
+
+    def action_limits(self) -> Optional[tuple[list[float], list[float]]]:
+        """Per-dimension (low, high) of the raw actions sent to `env.step()`,
+        for policy bundles. None if the task doesn't define any."""
+        return None
+
+    def normalization_stats(self) -> Dict[str, Any]:
+        """JSON-serializable description of how `format_batch` normalizes
+        state and actions, for policy bundles. Keyed by "state"/"actions",
+        each with a "type" and that type's parameters."""
+        return {}
 
     def is_success(self, info: Dict[str, Any]) -> bool:
         return info.get("score", 0) > 0.95

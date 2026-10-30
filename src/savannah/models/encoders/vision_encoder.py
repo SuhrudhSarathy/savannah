@@ -38,7 +38,7 @@ class VisionEncoder(nn.Module):
         self.num_cameras: int = num_cameras
         self.num_obs: int = num_obs
 
-        self.attn_pooling: None | AttentionPooling = None
+        self.attn_pooling: AttentionPooling | None = None
 
         if enable_attn_pooling:
             self.attn_pooling = AttentionPooling(

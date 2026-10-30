@@ -25,11 +25,14 @@ import pytest
 import torch
 from omegaconf import OmegaConf
 
+from savannah.bundle import BundleContents, read_bundle
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIGS = REPO_ROOT / "configs"
 SMOKE_CONFIGS = Path(__file__).resolve().parent / "configs"
 TRAIN_SCRIPT = REPO_ROOT / "scripts" / "train.py"
 OVERFIT_SCRIPT = REPO_ROOT / "scripts" / "debug" / "overfit_dataset_batch.py"
+EVAL_SCRIPT = REPO_ROOT / "scripts" / "eval" / "eval.py"
 
 MODEL_CONFIGS = sorted(p.stem for p in (CONFIGS / "model").glob("*.yaml"))
 
@@ -128,9 +131,9 @@ def run_script(script: Path, overrides: list[str], workdir: Path) -> str:
     return output
 
 
-def load_checkpoint(path: Path) -> dict:
-    assert path.exists(), f"expected checkpoint at {path}"
-    return torch.load(path, map_location="cpu")
+def load_checkpoint(path: Path) -> BundleContents:
+    assert path.exists(), f"expected bundle at {path}"
+    return read_bundle(path)
 
 
 def assert_finite_state_dict(state_dict: dict):
@@ -157,11 +160,42 @@ def test_train_script_runs_end_to_end(model, tmp_path):
 
     assert "Training Complete!" in output
     for name in ("latest", "best_model", "best_model_success"):
-        ckpt = load_checkpoint(ckpt_dir / "latest" / f"{name}.ckpt")
-        assert_finite_state_dict(ckpt["model_state_dict"])
-        assert_finite_state_dict(ckpt["ema_state_dict"])
+        bundle = load_checkpoint(ckpt_dir / "latest" / f"{name}.bundle")
+        assert_finite_state_dict(bundle.training_state["model_state_dict"])
+        assert_finite_state_dict(bundle.ema_weights)
 
-    assert load_checkpoint(ckpt_dir / "latest" / "latest.ckpt")["global_step"] == 2
+    assert (
+        load_checkpoint(ckpt_dir / "latest" / "latest.bundle").training_state[
+            "global_step"
+        ]
+        == 2
+    )
+
+
+@pytest.mark.parametrize("model", MODEL_CONFIGS)
+def test_train_bundle_loads_and_evals_without_overrides(model, tmp_path):
+    ckpt_dir = tmp_path / "ckpt"
+    run_script(
+        TRAIN_SCRIPT,
+        [
+            *model_overrides(model),
+            *TRAINER_OVERRIDES,
+            f"trainer.checkpoint.checkpoint_dir={ckpt_dir}",
+        ],
+        tmp_path,
+    )
+
+    output = run_script(
+        EVAL_SCRIPT,
+        [
+            f"bundle_path={ckpt_dir / 'latest' / 'best_model.bundle'}",
+            "num_episodes=1",
+            "execute_steps=4",
+            f"video_folder={tmp_path / 'videos'}",
+        ],
+        tmp_path,
+    )
+    assert "Success rate: 0/1" in output
 
 
 def test_train_script_resumes_from_checkpoint(tmp_path):
@@ -173,8 +207,8 @@ def test_train_script_resumes_from_checkpoint(tmp_path):
         f"trainer.checkpoint.checkpoint_dir={ckpt_dir}",
     ]
     run_script(TRAIN_SCRIPT, common, tmp_path)
-    latest = ckpt_dir / "latest" / "latest.ckpt"
-    assert load_checkpoint(latest)["global_step"] == 2
+    latest = ckpt_dir / "latest" / "latest.bundle"
+    assert load_checkpoint(latest).training_state["global_step"] == 2
 
     output = run_script(
         TRAIN_SCRIPT,
@@ -190,7 +224,7 @@ def test_train_script_resumes_from_checkpoint(tmp_path):
     assert "Training Complete!" in output
     # Resumed at 2, so this run only covers steps 2..5 and its last val
     # checkpoint lands at step 4 -- not possible without the resume.
-    assert load_checkpoint(latest)["global_step"] == 4
+    assert load_checkpoint(latest).training_state["global_step"] == 4
 
 
 def test_overfit_script_runs_end_to_end(tmp_path):
@@ -206,6 +240,6 @@ def test_overfit_script_runs_end_to_end(tmp_path):
     )
 
     assert "Action reconstruction MSE" in output
-    ckpt = load_checkpoint(overfit_dir / "overfit_final.ckpt")
-    assert ckpt["global_step"] == 3
-    assert_finite_state_dict(ckpt["model_state_dict"])
+    bundle = load_checkpoint(overfit_dir / "overfit_final.bundle")
+    assert bundle.training_state["global_step"] == 3
+    assert_finite_state_dict(bundle.training_state["model_state_dict"])

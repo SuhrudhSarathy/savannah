@@ -12,9 +12,9 @@ import hydra
 import torch
 from omegaconf import DictConfig, OmegaConf
 
-from savannah.factory import build_policy, build_task
+from savannah.bundle import apply_bundle_config, load_bundle, resolve_bundle_path
+from savannah.factory import build_task
 from savannah.tasks import RecordedEnv
-from savannah.utils.checkpoint import resolve_checkpoint_path
 from savannah.utils.device import get_device
 from savannah.utils.evaluation import EpisodeResult, run_rollout
 from savannah.utils.log import logger, setup_logging
@@ -24,26 +24,29 @@ from savannah.utils.logger import ExperimentLogger
 @hydra.main(version_base=None, config_path="../../configs", config_name="eval")
 def main(cfg: DictConfig) -> None:
     setup_logging(log_dir="logs", level=cfg.log_level)
+    device = get_device()
+
+    bundle_path = resolve_bundle_path(cfg)
+    logger.info("Loading bundle: {}", bundle_path)
+    bundle = load_bundle(bundle_path, device, use_ema=cfg.use_ema)
+    apply_bundle_config(cfg, bundle)
+    policy = bundle.policy
+
     logger.info("Config:\n{}", OmegaConf.to_yaml(cfg, resolve=True))
     exp_logger = ExperimentLogger(
         project_name=cfg.wandb.project,
         config=OmegaConf.to_container(cfg, resolve=True),
         enable_logging=cfg.wandb.enable_logging,
     )
-    device = get_device()
 
     task = build_task(cfg, device=device)
-    policy = build_policy(cfg).to(device)
-
-    # Load checkpoint
-    checkpoint_path = resolve_checkpoint_path(cfg)
-    logger.info("Loading checkpoint: {}", checkpoint_path)
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    state_key = "ema_state_dict" if cfg.use_ema else "model_state_dict"
-    policy.load_state_dict(checkpoint[state_key])
 
     base_env = task.get_env(render_mode="rgb_array")
-    env = RecordedEnv(base_env, video_folder=cfg.video_folder, name_prefix="eval")
+    env = RecordedEnv(
+        base_env,
+        video_folder=cfg.video_folder or f"./eval_videos/{cfg.name}",
+        name_prefix="eval",
+    )
 
     def on_episode_start(ep: int) -> None:
         logger.info("── Episode {}/{} ──", ep + 1, cfg.num_episodes)

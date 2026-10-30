@@ -161,7 +161,7 @@ uv run python scripts/train.py model=unet task=metaworld_assembly trainer.train.
 uv run python scripts/train.py wandb.enable_logging=false
 
 # resume from a checkpoint (restores model, EMA, optimizer, scheduler, and step)
-uv run python scripts/train.py trainer.checkpoint.resume_from=checkpoints/<run>/latest/latest.ckpt
+uv run python scripts/train.py trainer.checkpoint.resume_from=checkpoints/<run>/latest/latest.bundle
 ```
 
 The trainer uses AdamW (with a separate `trainer.train.vision_lr` for the vision encoder), gradient
@@ -173,12 +173,12 @@ accumulation, bf16 autocast, gradient clipping, and an EMA copy of the weights. 
 The device is picked automatically (CUDA → MPS → CPU). Set `SAVANNAH_DEVICE` (e.g. `SAVANNAH_DEVICE=cpu`)
 to force one.
 
-Checkpoints are written to `trainer.checkpoint.checkpoint_dir` (default `checkpoints/<model>_<task>`).
+Checkpoints are written as [policy bundles](#policy-bundles) to `trainer.checkpoint.checkpoint_dir` (default `checkpoints/<model>_<task>`).
 Each save writes to two places: a permanent per-step archive
-(`checkpoint_dir/{global_step}/{name}.ckpt`, never overwritten) and a rolling
-`checkpoint_dir/latest/{name}.ckpt` mirror of the most recent checkpoint of
+(`checkpoint_dir/{global_step}/{name}.bundle`, never overwritten) and a rolling
+`checkpoint_dir/latest/{name}.bundle` mirror of the most recent checkpoint of
 each kind (`latest`, `best_model` by validation reconstruction error, `best_model_success` by sim
-success rate). Pressing Ctrl-C saves `latest.ckpt` before exiting.
+success rate). Pressing Ctrl-C saves `latest.bundle` before exiting.
 
 `best_model`, `best_model_success`, and `latest` checkpoints (from the `latest/`
 mirror) can additionally be uploaded as **W&B artifacts** — controlled by
@@ -215,24 +215,40 @@ AUTO_DESTROY=true VAST_INSTANCE_ID=12345 bash infra/run_multi_train.sh configs/e
 ## Evaluation
 
 Evaluate a trained policy in the simulator and record videos to `video_folder` (default
-`eval_videos/<model>_<task>`). Pass the same `model`/`task` the checkpoint was trained with:
+`eval_videos/<name>`). The model and task come from the bundle, so there is nothing else to pass:
 
 ```bash
-# from a local checkpoint
-uv run python scripts/eval/eval.py model=unet task=pusht checkpoint_path=checkpoints/unet_pusht/latest/latest.ckpt
+# from a local bundle
+uv run python scripts/eval/eval.py bundle_path=checkpoints/unet_pusht/latest/latest.bundle
 
 # from a W&B model artifact
-uv run python scripts/eval/eval.py model=dit_cross_attn task=metaworld_assembly wandb_artifact=savannah/dit_cross_attn_metaworld_assembly:best
+uv run python scripts/eval/eval.py wandb_artifact=savannah/dit_cross_attn_metaworld_assembly:best
 ```
 
 Useful overrides: `num_episodes`, `execute_steps` (receding-horizon action chunk size), `use_ema`
 (default `true`), `video_folder`, `pick_color`/`place_color` (ManiSkill color matching only).
 
+### Policy bundles
+
+Training is driven by the Hydra config; everything after it is driven by the bundle. A `.bundle`
+is a single zip file holding the EMA weights, the resolved config, the training state used for
+resuming, and a manifest with the format version, savannah version, git hash, obs/action specs,
+normalization stats and member checksums.
+
+Saves are atomic, so a crash mid-save never damages an existing bundle, and loads verify the
+checksums and raise `BundleCorruptError` on a damaged file.
+
+```python
+from savannah.bundle import load_policy
+
+policy = load_policy("checkpoints/unet_pusht/latest/best_model.bundle", device="cuda")
+```
+
 To inspect a single dataset episode (predicted vs. ground-truth actions) instead of running the
 simulator:
 
 ```bash
-uv run python scripts/eval/eval_single_episode.py model=unet task=pusht checkpoint_path=... episode_index=3
+uv run python scripts/eval/eval_single_episode.py bundle_path=... episode_index=3
 ```
 
 To download a checkpoint from a W&B model artifact without running eval:
@@ -264,7 +280,7 @@ traced back to image patches through the attention pooler, and self-attention ov
 Plots are written to `output_dir`:
 
 ```bash
-uv run python scripts/debug/visualize_cross_attention.py checkpoint_path=... episode_index=0 frame_index=10
+uv run python scripts/debug/visualize_cross_attention.py bundle_path=... episode_index=0 frame_index=10
 ```
 
 ## Tests

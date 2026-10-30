@@ -14,8 +14,8 @@ import torch
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from omegaconf import DictConfig
 
-from savannah.factory import build_policy, build_task
-from savannah.utils.checkpoint import resolve_checkpoint_path
+from savannah.bundle import apply_bundle_config, load_bundle, resolve_bundle_path
+from savannah.factory import build_task
 from savannah.utils.device import get_device
 from savannah.utils.log import setup_logging
 from savannah.utils.observation import ObservationKey
@@ -143,15 +143,12 @@ def run_dataset_episode_eval(cfg: DictConfig) -> None:
     device = get_device()
     print("Using device:", device)
 
+    bundle_path = resolve_bundle_path(cfg)
+    print(f"Loading bundle: {bundle_path}")
+    bundle = load_bundle(bundle_path, device, use_ema=cfg.use_ema)
+    apply_bundle_config(cfg, bundle)
+    policy = bundle.policy
     task = build_task(cfg, device=device)
-    policy = build_policy(cfg).to(device)
-
-    checkpoint_path = resolve_checkpoint_path(cfg)
-    print(f"Loading checkpoint: {checkpoint_path}")
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    state_key = "ema_state_dict" if cfg.use_ema else "model_state_dict"
-    policy.load_state_dict(checkpoint[state_key])
-    # policy.eval()
 
     # ABCPutBottlesTask has no LeRobotDataset backing it (its episodes live
     # in flat per-episode directories, see savannah/tasks/abc.py's module
