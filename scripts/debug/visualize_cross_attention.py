@@ -32,8 +32,8 @@ import torch
 import torch.nn.functional as F
 from omegaconf import DictConfig
 
-from savannah.bundle import apply_bundle_config, load_bundle, resolve_bundle_path
 from savannah.factory import build_task
+from savannah.pretrained import load_pretrained_from_cfg
 from savannah.utils.device import get_device
 from savannah.utils.log import logger, setup_logging
 from savannah.utils.observation import ObservationKey
@@ -364,16 +364,13 @@ def run_attention_viz(cfg: DictConfig) -> None:
     device = get_device()
     logger.info("Using device: {}", device)
 
-    bundle_path = resolve_bundle_path(cfg)
-    logger.info("Loading bundle: {}", bundle_path)
-    bundle = load_bundle(bundle_path, device, use_ema=cfg.use_ema)
-    apply_bundle_config(cfg, bundle)
-    policy = bundle.policy
+    pretrained = load_pretrained_from_cfg(cfg, device)
+    policy = pretrained.policy
     task = build_task(cfg, device=device)
 
-    training_state = bundle.training_state or {}
-    episode_index = cfg.episode_index or training_state.get("episode_index", 0)
-    frame_index = cfg.frame_index or training_state.get("frame_index", 0)
+    # Overfit checkpoints record the episode/frame they were trained on.
+    episode_index = cfg.episode_index or pretrained.extra.get("episode_index") or 0
+    frame_index = cfg.frame_index or pretrained.extra.get("frame_index") or 0
     logger.info("Visualizing episode={} frame={}", episode_index, frame_index)
 
     task.config.num_workers = 0

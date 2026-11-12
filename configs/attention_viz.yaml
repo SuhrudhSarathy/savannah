@@ -1,10 +1,11 @@
-# model and task come from the bundle.
-bundle_path: null # local bundle: pass via CLI: bundle_path=path/to/model.bundle
-wandb_artifact: null # OR pull from W&B: wandb_artifact=savannah/flow_matching_pusht:best
+# model and task come from the checkpoint.
+pretrained: null # HF Hub repo id (suhrudhsarathy/unet_pusht) or local dir (checkpoints/unet_pusht)
+subfolder: best_model # best_model | best_model_success | latest
+revision: null # Hub branch / tag / commit, e.g. best_model-step-15000
 use_ema: true # load the EMA weights instead of the raw training weights
 
-episode_index: null # which episode to visualize; null = reuse the episode the bundle was overfit on
-frame_index: null # which frame within that episode; null = reuse the bundle's frame (falls back to 0)
+episode_index: null # which episode to visualize; null = reuse the episode the checkpoint was overfit on
+frame_index: null # which frame within that episode; null = reuse the checkpoint's frame (falls back to 0)
 denoise_step: -1 # which sampler step's attention to visualize (-1 = last / cleanest x_t)
 query_idx: null # null = average over the whole action horizon; else an int index into it
 head_idx: null # null = average over attention heads; else an int index into them

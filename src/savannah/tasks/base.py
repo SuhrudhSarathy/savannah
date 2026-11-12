@@ -11,7 +11,7 @@ from savannah.data.dataset import DataSetConfig, LerobotDatasetWrapper
 
 
 class BaseRobotTask(ABC):
-    # What the env's actions mean, recorded in policy bundles.
+    # What the env's actions mean, recorded in checkpoint manifests.
     action_space: str = "unknown"
 
     def __init__(self, config: "DataSetConfig", device: torch.device):
@@ -24,10 +24,17 @@ class BaseRobotTask(ABC):
         self._val_loader = None
         self._env = None
 
+    def delta_timestamps(self) -> Dict[str, list[float]]:
+        """LeRobot features to load, each at its time offsets (s) from the
+        current frame. Default: state + cameras over the obs horizon and
+        `config.action_key` over the action horizon. Override to load other
+        features (e.g. past actions as an input)."""
+        return LerobotDatasetWrapper._build_timestamps(self.config)
+
     def get_train_loader(self):
         if self._train_loader is None:
             self._train_loader, self._val_loader = LerobotDatasetWrapper.create_loaders(
-                self.config, self.device
+                self.config, self.device, self.delta_timestamps()
             )
         return self._train_loader
 
@@ -41,7 +48,11 @@ class BaseRobotTask(ABC):
         (frame_index=None) as a single batch — see
         LerobotDatasetWrapper.get_episode_loader."""
         return LerobotDatasetWrapper.get_episode_loader(
-            self.config, self.device, episode_index, frame_index
+            self.config,
+            self.device,
+            episode_index,
+            frame_index,
+            delta_timestamps=self.delta_timestamps(),
         )
 
     @abstractmethod
@@ -105,12 +116,12 @@ class BaseRobotTask(ABC):
 
     def action_limits(self) -> Optional[tuple[list[float], list[float]]]:
         """Per-dimension (low, high) of the raw actions sent to `env.step()`,
-        for policy bundles. None if the task doesn't define any."""
+        for checkpoint manifests. None if the task doesn't define any."""
         return None
 
     def normalization_stats(self) -> Dict[str, Any]:
         """JSON-serializable description of how `format_batch` normalizes
-        state and actions, for policy bundles. Keyed by "state"/"actions",
+        state and actions, for checkpoint manifests. Keyed by "state"/"actions",
         each with a "type" and that type's parameters."""
         return {}
 

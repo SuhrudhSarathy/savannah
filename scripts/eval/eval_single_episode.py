@@ -14,8 +14,8 @@ import torch
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from omegaconf import DictConfig
 
-from savannah.bundle import apply_bundle_config, load_bundle, resolve_bundle_path
 from savannah.factory import build_task
+from savannah.pretrained import load_pretrained_from_cfg
 from savannah.utils.device import get_device
 from savannah.utils.log import setup_logging
 from savannah.utils.observation import ObservationKey
@@ -23,26 +23,10 @@ from savannah.utils.observation import ObservationKey
 
 def _lerobot_episode_samples(cfg: DictConfig, task):
     """Fetches (fetch_fn, num_steps) for tasks backed by a real LeRobot repo."""
-    dataset_config = task.config
-    obs_horizon = dataset_config.obs_horizon
-    action_horizon = dataset_config.action_horizon
-
-    # Build delta_timestamps the same way LerobotDatasetWrapper does
-    obs_timestamps = [
-        -(obs_horizon - 1 - i) / dataset_config.fps for i in range(obs_horizon)
-    ]
-    act_timestamps = [i / dataset_config.fps for i in range(action_horizon)]
-
-    camera_keys = [f"observation.images.{cam}" for cam in dataset_config.cameras]
-    delta_timestamps = {
-        "observation.state": obs_timestamps,
-        **{cam_key: obs_timestamps for cam_key in camera_keys},
-        "action": act_timestamps,
-    }
-
     full_dataset = LeRobotDataset(
-        dataset_config.repo_id,
-        delta_timestamps=delta_timestamps,
+        task.config.repo_id,
+        # The same features/offsets the task trains on.
+        delta_timestamps=task.delta_timestamps(),
         video_backend="torchcodec",
     )
 
@@ -143,11 +127,7 @@ def run_dataset_episode_eval(cfg: DictConfig) -> None:
     device = get_device()
     print("Using device:", device)
 
-    bundle_path = resolve_bundle_path(cfg)
-    print(f"Loading bundle: {bundle_path}")
-    bundle = load_bundle(bundle_path, device, use_ema=cfg.use_ema)
-    apply_bundle_config(cfg, bundle)
-    policy = bundle.policy
+    policy = load_pretrained_from_cfg(cfg, device).policy
     task = build_task(cfg, device=device)
 
     # ABCPutBottlesTask has no LeRobotDataset backing it (its episodes live

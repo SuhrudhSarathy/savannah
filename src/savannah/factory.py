@@ -15,3 +15,12 @@ def build_policy(cfg: DictConfig) -> torch.nn.Module:
 
 def build_task(cfg: DictConfig, device: torch.device):
     return instantiate(cfg.task, device=device)
+
+
+def build_policy_from_pretrained(pretrained_name_or_path, **kwargs) -> torch.nn.Module:
+    """A policy, in eval mode, from a Hub repo id or local checkpoint dir. See
+    savannah.pretrained.load_pretrained for the keyword arguments."""
+    # Imported here: savannah.pretrained itself imports build_policy.
+    from savannah.pretrained import build_policy_from_pretrained as _build
+
+    return _build(pretrained_name_or_path, **kwargs)

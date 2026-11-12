@@ -12,8 +12,8 @@ import hydra
 import torch
 from omegaconf import DictConfig, OmegaConf
 
-from savannah.bundle import apply_bundle_config, load_bundle, resolve_bundle_path
 from savannah.factory import build_task
+from savannah.pretrained import load_pretrained_from_cfg
 from savannah.tasks import RecordedEnv
 from savannah.utils.device import get_device
 from savannah.utils.evaluation import EpisodeResult, run_rollout
@@ -26,11 +26,7 @@ def main(cfg: DictConfig) -> None:
     setup_logging(log_dir="logs", level=cfg.log_level)
     device = get_device()
 
-    bundle_path = resolve_bundle_path(cfg)
-    logger.info("Loading bundle: {}", bundle_path)
-    bundle = load_bundle(bundle_path, device, use_ema=cfg.use_ema)
-    apply_bundle_config(cfg, bundle)
-    policy = bundle.policy
+    policy = load_pretrained_from_cfg(cfg, device).policy
 
     logger.info("Config:\n{}", OmegaConf.to_yaml(cfg, resolve=True))
     exp_logger = ExperimentLogger(

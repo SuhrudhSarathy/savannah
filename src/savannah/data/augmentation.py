@@ -73,12 +73,24 @@ class ObservationAugmenter:
         self.config = config
 
     def augment_images(
-        self, images: list[torch.Tensor], step: int
+        self,
+        images: list[torch.Tensor],
+        step: int,
+        photometric: list[bool] | None = None,
     ) -> list[torch.Tensor]:
-        """images: list of (B, N, C, H, W) tensors, one per camera, float in [0, 1]."""
+        """images: list of (B, N, C, H, W) tensors, one per camera, float in [0, 1].
+
+        `photometric[i]=False` skips color jitter and speckle noise for camera
+        i (crop and camera masking still apply), for non-RGB streams such as
+        binary segmentation masks. Defaults to True for every camera."""
         if not self.config.enabled:
             return images
-        return [self._augment_camera(img, step) for img in images]
+        if photometric is None:
+            photometric = [True] * len(images)
+        return [
+            self._augment_camera(img, step, photo)
+            for img, photo in zip(images, photometric, strict=True)
+        ]
 
     def augment_state(self, state: torch.Tensor, step: int) -> torch.Tensor:
         if not self.config.enabled:
@@ -102,13 +114,16 @@ class ObservationAugmenter:
         mask = keep.to(state.dtype).view(-1, *([1] * (state.dim() - 1)))
         return state * mask
 
-    def _augment_camera(self, img: torch.Tensor, step: int) -> torch.Tensor:
+    def _augment_camera(
+        self, img: torch.Tensor, step: int, photometric: bool = True
+    ) -> torch.Tensor:
         B, N, C, H, W = img.shape
         x = img.reshape(B * N, C, H, W)
 
         x = self._random_crop_resize(x, B, N, step)
-        x = self._color_jitter(x, B, N, step)
-        x = self._speckle_noise(x, step)
+        if photometric:
+            x = self._color_jitter(x, B, N, step)
+            x = self._speckle_noise(x, step)
 
         x = x.reshape(B, N, C, H, W).clamp(0.0, 1.0)
         return self._mask_camera(x)

@@ -2,40 +2,58 @@
 # Run: uv run python infra/multi_run.py configs/experiments.yaml
 #
 # Each experiment's `name` is passed to train.py as its Hydra `name`, so the
-# W&B run name, artifact name, and checkpoint dir all follow it. Checkpoints go
+# W&B run name, HF Hub repo, and checkpoint dir all follow it. Checkpoints go
 # to checkpoints/<name>, or <checkpoint_root>/<name> when checkpoint_root is set
 # (e.g. a larger data drive on the training box).
 
-vram_per_run_gb: 10
+# VRAM one run needs, used to fit several runs on a single GPU (never more
+# runs than experiments). A trainable DINOv3 ViT-S on 3 cameras x 2 frames at
+# 224 px, batch 32, is a rough 20 GB estimate.
+vram_per_run_gb: 24
 # checkpoint_root: /path/to/large/drive/checkpoints
 
 experiments:
-  - name: dit_cross_attn_disassemble
+  # DINOv3 policy on franka_sim hammer_nails, told which nail to hit by the
+  # target mask (an extra camera stream) instead of language. In/out:
+  # [ee_pose, gripper command] (state_dim/action_dim 8, from the task config).
+  # Needs on the training box: franka_sim installed (FRANKA_SIM_PATH for
+  # infra/setup.sh, for the sim eval) and an HF login with access to the gated
+  # facebook/dinov3-vits16-pretrain-lvd1689m (HF_TOKEN; also used to push
+  # checkpoints to suhrudhsarathy/<name>).
+  - name: dit_cross_attn_dino_hammer_nails_mask
     overrides:
-      - model=dit_cross_attn
-      - task=metaworld_disassemble
+      - model=dit_cross_attn_with_dino
+      - task=franka_hammer_nails
+      # One sim episode per eval is too noisy to pick best_model_success.
+      - trainer.eval.eval_episodes=10
 
-  - name: dit_cross_attn_assembly
-    overrides:
-      - model=dit_cross_attn
-      - task=metaworld_assembly
+  # Metaworld runs, paused while the franka experiment runs on its own.
+  # - name: dit_cross_attn_disassemble
+  #   overrides:
+  #     - model=dit_cross_attn
+  #     - task=metaworld_disassemble
 
-  - name: dit_cross_attn_hammer
-    overrides:
-      - model=dit_cross_attn
-      - task=metaworld_hammer
+  # - name: dit_cross_attn_assembly
+  #   overrides:
+  #     - model=dit_cross_attn
+  #     - task=metaworld_assembly
 
-  - name: dit_cross_attn_drawer_close
-    overrides:
-      - model=dit_cross_attn
-      - task=metaworld_drawer_close
+  # - name: dit_cross_attn_hammer
+  #   overrides:
+  #     - model=dit_cross_attn
+  #     - task=metaworld_hammer
+
+  # - name: dit_cross_attn_drawer_close
+  #   overrides:
+  #     - model=dit_cross_attn
+  #     - task=metaworld_drawer_close
 
   # - name: dit_cross_attn_button_press
   #   overrides:
   #     - model=dit_cross_attn
   #     - task=metaworld_button_press
 
-  - name: dit_cross_attn_drawer_open
-    overrides:
-      - model=dit_cross_attn
-      - task=metaworld_drawer_open
+  # - name: dit_cross_attn_drawer_open
+  #   overrides:
+  #     - model=dit_cross_attn
+  #     - task=metaworld_drawer_open

@@ -73,6 +73,29 @@ training and a gym env for sim-based eval:
 | MetaWorld — button press | `metaworld_button_press.yaml` | `suhrudhsarathy/metaworld-button-press-v3` | `metaworld` |
 | MetaWorld — button press (multi-camera) | `metaworld_multi_button_press.yaml` | `suhrudhsarathy/metaworld-button-press-multi-v3` | `metaworld` |
 | ManiSkill — color matching (pick colored cube into matching bin) | `maniskill_color_matching.yaml` | `suhrudhsarathy/color-pick-and-place` | `mani_skill` (custom `ColorMatchingEnv` in `src/savannah/envs/color_matching.py`) |
+| franka_sim — kitting long (put all 4 parts in the kit tray) | `franka_kitting_long.yaml` | `suhrudhsarathy/franka_sim_kitting_long` | `franka_sim` (installed separately, see below) |
+| franka_sim — hammer nails (hit the masked nail) | `franka_hammer_nails.yaml` | `suhrudhsarathy/franka_sim_hammer_nails` | `franka_sim` (installed separately, see below) |
+
+`franka_sim` isn't on PyPI (its repo is private), so it isn't in the `sim` extra. It's only needed
+for sim eval (training reads the LeRobot dataset alone). Install it into the venv from a local
+checkout with `uv pip install -e ~/programming/python/franka_sim`. It needs `mujoco>=4`, which the
+`[tool.uv]` override in `pyproject.toml` enforces for every simulator (Metaworld's `mujoco==3.3.0` pin
+included; `src/savannah/tasks/metaworld.py` patches the one MuJoCo 4 incompatibility it hits).
+
+`FrankaSimTask` (`src/savannah/tasks/franka_sim.py`) works for any franka_sim task exported with
+`scripts/to_lerobot.py`: point `repo_id` at the dataset and `env_name` at the franka_sim task. The
+policy's input and output share one representation, `[x, y, z, qw, qx, qy, qz, gripper]`: the state
+is the measured end-effector pose plus the gripper command in force, and the action is the commanded
+end-effector pose plus gripper command (`action_key: action.ee_pose`, rolled out with franka_sim's
+`ee_pose` action mode). Both use one min-max normalization. Add `target_mask` to `cameras` to feed the
+target-entity mask (`observation.images.target_mask`) as an extra image stream. Only single-target
+datasets have it, not the `*_long` ones.
+
+The franka task configs declare `state_dim: 8` / `action_dim: 8`, and `dit_cross_attn_with_dino` reads
+them (falling back to Metaworld's 4), so it trains on them without overrides:
+`uv run python scripts/train.py model=dit_cross_attn_with_dino task=franka_hammer_nails`. Its DINOv3
+backbone takes any `image_size` that's a multiple of 16. Other model configs still need
+`model.state_dim=8 model.action_dim=8`.
 
 All task configs live in `configs/task/`. Train-time image and state augmentation (crop, color
 jitter, speckle noise, state noise, random camera/state masking, all decaying over training) is
@@ -108,16 +131,19 @@ uv sync --extra sim
 e.g. `brew install ffmpeg` or `sudo apt-get install ffmpeg`. `torch` comes from PyPI; on Linux its
 wheels bundle CUDA 13, which needs an NVIDIA driver >= 580.
 
-`infra/setup.sh` installs uv and FFmpeg, runs `uv sync --extra sim`, and logs into Weights & Biases:
+`infra/setup.sh` installs uv and FFmpeg, runs `uv sync --extra sim`, and logs into Weights & Biases
+(used for metrics and videos) and the Hugging Face Hub (used for checkpoints):
 
 ```bash
-WANDB_API_KEY=<your-key> bash infra/setup.sh
+WANDB_API_KEY=<your-key> HF_TOKEN=<your-token> bash infra/setup.sh
 ```
 
-If you skip that, log into W&B manually before training (or set `wandb.enable_logging=false`):
+If you skip that, log in manually before training (or set `wandb.enable_logging=false` /
+`trainer.checkpoint.push_to_hub=false`):
 
 ```bash
 uv run wandb login <your-key>
+uv run hf auth login
 ```
 
 To run ruff on every commit:
@@ -157,11 +183,11 @@ Pick a model/task and customize the run:
 uv run python scripts/train.py model=dit_cross_attn_flow_matching task=pusht
 uv run python scripts/train.py model=unet task=metaworld_assembly trainer.train.training_steps=50000
 
-# disable W&B logging
-uv run python scripts/train.py wandb.enable_logging=false
+# disable W&B logging / Hub checkpoint uploads
+uv run python scripts/train.py wandb.enable_logging=false trainer.checkpoint.push_to_hub=false
 
-# resume from a checkpoint (restores model, EMA, optimizer, scheduler, and step)
-uv run python scripts/train.py trainer.checkpoint.resume_from=checkpoints/<run>/latest/latest.bundle
+# resume from a local checkpoint (restores model, EMA, optimizer, scheduler, and step)
+uv run python scripts/train.py trainer.checkpoint.resume_from=checkpoints/<run>/latest
 ```
 
 The trainer uses AdamW (with a separate `trainer.train.vision_lr` for the vision encoder), gradient
@@ -173,17 +199,10 @@ accumulation, bf16 autocast, gradient clipping, and an EMA copy of the weights. 
 The device is picked automatically (CUDA → MPS → CPU). Set `SAVANNAH_DEVICE` (e.g. `SAVANNAH_DEVICE=cpu`)
 to force one.
 
-Checkpoints are written as [policy bundles](#policy-bundles) to `trainer.checkpoint.checkpoint_dir` (default `checkpoints/<model>_<task>`).
-Each save writes to two places: a permanent per-step archive
-(`checkpoint_dir/{global_step}/{name}.bundle`, never overwritten) and a rolling
-`checkpoint_dir/latest/{name}.bundle` mirror of the most recent checkpoint of
-each kind (`latest`, `best_model` by validation reconstruction error, `best_model_success` by sim
-success rate). Pressing Ctrl-C saves `latest.bundle` before exiting.
-
-`best_model`, `best_model_success`, and `latest` checkpoints (from the `latest/`
-mirror) can additionally be uploaded as **W&B artifacts** — controlled by
-`wandb.enable_model_checkpoint` (default `false`, requires
-`wandb.enable_logging=true`).
+Checkpoints are written to `trainer.checkpoint.checkpoint_dir` (default `checkpoints/<model>_<task>`),
+one folder per kind: `latest/`, `best_model/` (by validation reconstruction error) and
+`best_model_success/` (by sim success rate). Each save replaces that folder. Pressing Ctrl-C saves
+`latest/` before exiting. See [Checkpoints & the Hugging Face Hub](#checkpoints--the-hugging-face-hub).
 
 ### Running multiple experiments
 
@@ -195,7 +214,7 @@ uv run python infra/multi_run.py configs/experiments.yaml
 uv run python infra/multi_run.py configs/experiments.yaml --dry-run
 ```
 
-Each experiment's `name` becomes the run's Hydra `name`. Its W&B run name, artifact name, and
+Each experiment's `name` becomes the run's Hydra `name`. Its W&B run name, Hub repo, and
 checkpoint dir (`checkpoints/<name>`) all follow it. Set `checkpoint_root` in the YAML to put every run's
 checkpoints under `<checkpoint_root>/<name>` instead (e.g. on a larger data drive).
 
@@ -215,46 +234,27 @@ AUTO_DESTROY=true VAST_INSTANCE_ID=12345 bash infra/run_multi_train.sh configs/e
 ## Evaluation
 
 Evaluate a trained policy in the simulator and record videos to `video_folder` (default
-`eval_videos/<name>`). The model and task come from the bundle, so there is nothing else to pass:
+`eval_videos/<name>`). The model and task come from the checkpoint, so there is nothing else to pass:
 
 ```bash
-# from a local bundle
-uv run python scripts/eval/eval.py bundle_path=checkpoints/unet_pusht/latest/latest.bundle
+# from the Hub (subfolder: best_model | best_model_success | latest; default best_model)
+uv run python scripts/eval/eval.py pretrained=suhrudhsarathy/unet_pusht subfolder=best_model
 
-# from a W&B model artifact
-uv run python scripts/eval/eval.py wandb_artifact=savannah/dit_cross_attn_metaworld_assembly:best
+# an older checkpoint, by tag
+uv run python scripts/eval/eval.py pretrained=suhrudhsarathy/unet_pusht revision=best_model-step-15000
+
+# from a local run (or checkpoint) dir
+uv run python scripts/eval/eval.py pretrained=checkpoints/unet_pusht subfolder=latest
 ```
 
 Useful overrides: `num_episodes`, `execute_steps` (receding-horizon action chunk size), `use_ema`
 (default `true`), `video_folder`, `pick_color`/`place_color` (ManiSkill color matching only).
 
-### Policy bundles
-
-Training is driven by the Hydra config; everything after it is driven by the bundle. A `.bundle`
-is a single zip file holding the EMA weights, the resolved config, the training state used for
-resuming, and a manifest with the format version, savannah version, git hash, obs/action specs,
-normalization stats and member checksums.
-
-Saves are atomic, so a crash mid-save never damages an existing bundle, and loads verify the
-checksums and raise `BundleCorruptError` on a damaged file.
-
-```python
-from savannah.bundle import load_policy
-
-policy = load_policy("checkpoints/unet_pusht/latest/best_model.bundle", device="cuda")
-```
-
 To inspect a single dataset episode (predicted vs. ground-truth actions) instead of running the
 simulator:
 
 ```bash
-uv run python scripts/eval/eval_single_episode.py bundle_path=... episode_index=3
-```
-
-To download a checkpoint from a W&B model artifact without running eval:
-
-```bash
-uv run python scripts/data/download_artifact.py savannah/dit_cross_attn_metaworld_assembly:best --output-dir artifacts/
+uv run python scripts/eval/eval_single_episode.py pretrained=... episode_index=3
 ```
 
 To stitch a folder of per-episode eval videos into a single annotated clip:
@@ -280,7 +280,60 @@ traced back to image patches through the attention pooler, and self-attention ov
 Plots are written to `output_dir`:
 
 ```bash
-uv run python scripts/debug/visualize_cross_attention.py bundle_path=... episode_index=0 frame_index=10
+uv run python scripts/debug/visualize_cross_attention.py pretrained=... episode_index=0 frame_index=10
+```
+
+## Checkpoints & the Hugging Face Hub
+
+Training is driven by the Hydra config; everything after it is driven by the checkpoint. A
+checkpoint is a folder, laid out the same way locally and on the Hub:
+
+```
+config.yaml         fully resolved run config (model + task + name)
+model.safetensors   EMA weights
+manifest.json       format version, savannah version, git hash, step, metrics,
+                    obs/action specs, normalization stats
+training_state.pt   local only: raw weights, optimizer, scheduler, step (for resuming)
+```
+
+With `trainer.checkpoint.push_to_hub=true` (the default) every checkpoint is pushed, in the
+background, to the private model repo `trainer.checkpoint.hub_repo_id` (default
+`suhrudhsarathy/<name>`), one subfolder per checkpoint kind. Each push is one commit tagged
+`<checkpoint>-step-<N>`, so the repo's history is the per-step archive, and the root `README.md`
+lists the latest step and metrics of each checkpoint. `training_state.pt` is never pushed: resume
+from the local `checkpoint_dir`. The repo is created at startup, so a missing login fails right away
+rather than at the first checkpoint. W&B is only used for metrics and videos.
+
+Load a policy anywhere (evals, other projects, fine-tuning) with `build_policy_from_pretrained`. It
+takes a Hub repo id or local dir and follows the `transformers` `from_pretrained` conventions:
+
+```python
+from savannah.pretrained import build_policy_from_pretrained, load_pretrained
+
+policy = build_policy_from_pretrained(
+    "suhrudhsarathy/unet_pusht",
+    subfolder="best_model",  # best_model | best_model_success | latest
+    revision="best_model-step-15000",  # optional branch / tag / commit
+    device="cuda",
+)
+
+# config, manifest (specs, normalization, metrics) and policy together
+pretrained = load_pretrained("checkpoints/unet_pusht", subfolder="latest")
+
+# override model config fields; ignore_mismatched_sizes skips (and logs) weights whose shape changed
+policy = build_policy_from_pretrained(
+    "suhrudhsarathy/unet_pusht", action_dim=4, ignore_mismatched_sizes=True
+)
+```
+
+`savannah.pretrained.load_pretrained_weights(policy, ...)` loads pretrained weights into a policy you
+have already built, e.g. to fine-tune with a different config. Saves are atomic, so a crash mid-save
+never damages an existing checkpoint.
+
+To download a checkpoint without running eval:
+
+```bash
+uv run hf download suhrudhsarathy/unet_pusht --include "best_model/*" --local-dir checkpoints/unet_pusht
 ```
 
 ## Tests

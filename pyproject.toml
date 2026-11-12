@@ -13,6 +13,8 @@ dependencies = [
     "einops",
     "diffusers",
     "transformers",
+    "huggingface_hub",
+    "safetensors",
     "hydra-core",
     "omegaconf",
     "wandb[media]",
@@ -44,7 +46,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.uv]
-override-dependencies = ["mujoco>=3.3.7"]   # only if the sim extra still needs it
+override-dependencies = ["mujoco>=4.0"]   # metaworld pins mujoco==3.3.0; franka_sim needs >=4
 
 [tool.ruff]
 line-length = 88

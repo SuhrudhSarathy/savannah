@@ -6,7 +6,7 @@ Usage:
     uv run python infra/multi_run.py configs/experiments.yaml --dry-run
 
 Each experiment's `name` becomes the run's Hydra `name`, so its W&B run name,
-artifact name, and checkpoint dir (`checkpoints/<name>`, or
+HF Hub repo (`<namespace>/<name>`), and checkpoint dir (`checkpoints/<name>`, or
 `<checkpoint_root>/<name>` if the YAML sets `checkpoint_root`) all follow it.
 """
 
@@ -68,6 +68,20 @@ def load_experiments(path: Path) -> tuple[list[Experiment], int, str | None]:
         for exp in cfg["experiments"]
     ]
     return experiments, vram_per_run_gb, checkpoint_root
+
+
+def single_gpu_plan(
+    free_mb: int, vram_per_run_mb: int, num_experiments: int
+) -> tuple[int, float | None]:
+    """(max parallel runs, per-process VRAM fraction or None) on one GPU.
+    Never plans more slots than experiments, so a lone run isn't capped to a
+    fraction of the GPU it has to itself."""
+    slots = max(1, math.floor(free_mb / vram_per_run_mb))
+    max_parallel = max(1, min(slots, num_experiments))
+    if max_parallel == 1:
+        return 1, None
+    # Cap each process to its share, with a 5% buffer for the runtime
+    return max_parallel, round((1.0 / max_parallel) * 0.95, 4)
 
 
 def build_command(
@@ -161,15 +175,15 @@ def main() -> None:
             print(f"  GPU {g.index}: {g.free_mb} MB free / {g.total_mb} MB total")
     else:
         g = gpus[0]
-        max_parallel = max(1, math.floor(g.free_mb / vram_per_run_mb))
+        max_parallel, memory_fraction = single_gpu_plan(
+            g.free_mb, vram_per_run_mb, len(experiments)
+        )
         multi_gpu = False
         print(f"GPU 0: {g.free_mb} MB free / {g.total_mb} MB total")
         print(
             f"VRAM per run estimate: {vram_per_run_gb} GB → {max_parallel} parallel slot(s)"
         )
-        if max_parallel > 1:
-            # Cap each process to its share, with a 5% buffer for the runtime
-            memory_fraction = round((1.0 / max_parallel) * 0.95, 4)
+        if memory_fraction is not None:
             print(f"Per-process VRAM cap: {memory_fraction:.2%}")
 
     if max_parallel == 1:

@@ -1,14 +1,19 @@
+import threading
+from concurrent.futures import Future
+from types import SimpleNamespace
+
 import pytest
 import torch
 from dummies import SyntheticTask
 from omegaconf import OmegaConf
 
-from savannah.bundle import read_bundle, save_bundle
+import savannah.hub as hub_mod
 from savannah.data.dataset import DataSetConfig
 from savannah.models.backbones import DummyVisionBackbone
 from savannah.models.dit_cross_attn import DITCrossAttnPolicy
 from savannah.models.encoders import VisionEncoder
 from savannah.objectives import OverfitObjective
+from savannah.pretrained import read_checkpoint, save_pretrained
 from savannah.trainer.trainer import (
     CheckpointParams,
     EvalParams,
@@ -75,7 +80,7 @@ RUN_CFG = OmegaConf.create(
 )
 
 
-def build_trainer(checkpoint_dir) -> PolicyTrainer:
+def build_trainer(checkpoint_dir, **checkpoint_kwargs) -> PolicyTrainer:
     config = TrainConfig(
         train=TrainParams(
             lr=1e-3,
@@ -84,7 +89,9 @@ def build_trainer(checkpoint_dir) -> PolicyTrainer:
             gradient_accumulation_steps=1,
         ),
         eval=EvalParams(),
-        checkpoint=CheckpointParams(checkpoint_dir=str(checkpoint_dir)),
+        checkpoint=CheckpointParams(
+            checkpoint_dir=str(checkpoint_dir), **checkpoint_kwargs
+        ),
     )
     exp_logger = ExperimentLogger(project_name="test", config={}, enable_logging=False)
     return PolicyTrainer(
@@ -121,10 +128,10 @@ def test_load_checkpoint_restores_training_state(tmp_path):
         take_optimizer_step(trainer)
     trainer.best_val_loss = 0.5
     trainer.best_success_rate = 0.75
-    trainer.save_checkpoint("latest", trainer.best_val_loss)
+    trainer.save_checkpoint("latest", {"val_reconstruction_loss": 0.5})
 
     resumed = build_trainer(tmp_path)
-    resumed.load_checkpoint(str(tmp_path / "latest" / "latest.bundle"))
+    resumed.load_checkpoint(str(tmp_path / "latest"))
 
     assert resumed.global_step == trainer.global_step
     assert resumed.best_val_loss == pytest.approx(trainer.best_val_loss)
@@ -152,25 +159,39 @@ def test_load_checkpoint_restores_training_state(tmp_path):
     )
 
 
-def test_save_checkpoint_retains_per_step_history_and_updates_latest(tmp_path):
+def test_save_checkpoint_overwrites_one_folder_per_kind(tmp_path):
     trainer = build_trainer(tmp_path)
 
     take_optimizer_step(trainer)
-    step_a = trainer.global_step
-    trainer.save_checkpoint("latest", 0.9)
-
+    trainer.save_checkpoint("latest", {"val_reconstruction_loss": 0.9})
     take_optimizer_step(trainer)
     step_b = trainer.global_step
-    trainer.save_checkpoint("latest", 0.8)
+    trainer.save_checkpoint("latest", {"val_reconstruction_loss": 0.8})
+    trainer.save_checkpoint("best_model", {"val_reconstruction_loss": 0.8})
 
-    # Both step archives are retained, not overwritten.
-    assert (tmp_path / str(step_a) / "latest.bundle").exists()
-    assert (tmp_path / str(step_b) / "latest.bundle").exists()
+    # One folder per checkpoint kind; per-step history lives on the Hub.
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["best_model", "latest"]
 
-    # The "latest" mirror reflects only the most recent save.
-    latest = read_bundle(tmp_path / "latest" / "latest.bundle").training_state
-    assert latest["global_step"] == step_b
-    assert latest["success_rate"] == pytest.approx(0.8)
+    latest = read_checkpoint(tmp_path / "latest")
+    assert latest.training_state["global_step"] == step_b
+    assert latest.manifest["step"] == step_b
+    assert latest.manifest["metrics"] == {"val_reconstruction_loss": 0.8}
+
+
+def test_resume_from_run_dir_uses_latest(tmp_path):
+    trainer = build_trainer(tmp_path)
+    take_optimizer_step(trainer)
+    trainer.save_checkpoint("latest")
+
+    resumed = build_trainer(tmp_path)
+    resumed.load_checkpoint(str(tmp_path))
+    assert resumed.global_step == trainer.global_step
+
+
+def test_resume_needs_a_local_checkpoint(tmp_path):
+    trainer = build_trainer(tmp_path)
+    with pytest.raises(FileNotFoundError, match="never pushed"):
+        trainer.load_checkpoint("someone/some_run")
 
 
 def test_load_checkpoint_falls_back_for_missing_best_metric_keys(tmp_path):
@@ -184,8 +205,8 @@ def test_load_checkpoint_falls_back_for_missing_best_metric_keys(tmp_path):
         "global_step": trainer.global_step,
         "success_rate": 0.0,
     }
-    path = tmp_path / "legacy.bundle"
-    save_bundle(
+    path = tmp_path / "legacy"
+    save_pretrained(
         path,
         RUN_CFG,
         trainer.task,
@@ -202,3 +223,158 @@ def test_load_checkpoint_falls_back_for_missing_best_metric_keys(tmp_path):
     assert resumed.global_step == trainer.global_step
     assert resumed.best_val_loss == default_best_val_loss
     assert resumed.best_success_rate == default_best_success_rate
+
+
+# --------------------------------------------------------------------------
+# Hugging Face Hub uploads (fake HfApi, no network)
+# --------------------------------------------------------------------------
+
+
+class FakeHfApi:
+    """Records Hub calls. Uploads run on a real background thread, like
+    HfApi.run_as_future, so ordering bugs would show up."""
+
+    def __init__(self, *args, **kwargs):
+        self.created_repos = []
+        self.commits = []
+        self.tags = []
+        self.release_uploads = threading.Event()
+        self.release_uploads.set()
+        FakeHfApi.instance = self
+
+    def create_repo(self, repo_id, **kwargs):
+        self.created_repos.append((repo_id, kwargs))
+        return f"https://huggingface.co/{repo_id}"
+
+    def run_as_future(self, fn, *args, **kwargs):
+        future = Future()
+
+        def run():
+            self.release_uploads.wait()
+            try:
+                future.set_result(fn(*args, **kwargs))
+            except Exception as e:
+                future.set_exception(e)
+
+        threading.Thread(target=run, daemon=True).start()
+        return future
+
+    def create_commit(self, repo_id, *, operations, commit_message, **kwargs):
+        files = {}
+        for op in operations:
+            obj = op.path_or_fileobj
+            files[op.path_in_repo] = (
+                obj if isinstance(obj, bytes) else open(obj, "rb").read()
+            )
+        self.commits.append(
+            SimpleNamespace(repo_id=repo_id, message=commit_message, files=files)
+        )
+        return SimpleNamespace(oid=f"oid{len(self.commits)}")
+
+    def create_tag(self, repo_id, *, tag, revision, **kwargs):
+        self.tags.append((tag, revision))
+
+
+@pytest.fixture
+def fake_hub(monkeypatch):
+    monkeypatch.setattr(hub_mod, "HfApi", FakeHfApi)
+    return FakeHfApi
+
+
+def build_hub_trainer(tmp_path):
+    return build_trainer(
+        tmp_path, push_to_hub=True, hub_repo_id="someone/run", hub_private=True
+    )
+
+
+def test_push_to_hub_requires_repo_id(tmp_path, fake_hub):
+    with pytest.raises(ValueError, match="hub_repo_id"):
+        build_trainer(tmp_path, push_to_hub=True)
+
+
+def test_push_to_hub_creates_private_repo_up_front(tmp_path, fake_hub):
+    build_hub_trainer(tmp_path)
+    [(repo_id, kwargs)] = fake_hub.instance.created_repos
+    assert repo_id == "someone/run"
+    assert kwargs["private"] is True
+    assert kwargs["exist_ok"] is True
+
+
+def test_save_checkpoint_pushes_subfolder_without_training_state(tmp_path, fake_hub):
+    trainer = build_hub_trainer(tmp_path)
+    take_optimizer_step(trainer)
+    trainer.save_checkpoint("best_model", {"val_reconstruction_loss": 0.5})
+    trainer.wait_for_uploads()
+
+    api = fake_hub.instance
+    [commit] = api.commits
+    assert sorted(commit.files) == [
+        "README.md",
+        "best_model/config.yaml",
+        "best_model/manifest.json",
+        "best_model/model.safetensors",
+    ]
+    assert commit.message == f"best_model @ step {trainer.global_step}"
+    assert api.tags == [(f"best_model-step-{trainer.global_step}", "oid1")]
+    card = commit.files["README.md"].decode()
+    assert "someone/run" in card and "best_model" in card
+    # training_state.pt is still written locally for resuming.
+    assert (tmp_path / "best_model" / "training_state.pt").is_file()
+
+
+def test_save_waits_for_previous_upload_of_same_folder(tmp_path, fake_hub):
+    trainer = build_hub_trainer(tmp_path)
+    api = fake_hub.instance
+    api.release_uploads.clear()  # hold uploads in flight
+
+    take_optimizer_step(trainer)
+    trainer.save_checkpoint("latest")
+    first_step = trainer.global_step
+    take_optimizer_step(trainer)
+
+    saver = threading.Thread(target=trainer.save_checkpoint, args=("latest",))
+    saver.start()
+    saver.join(timeout=0.5)
+    # The second save must block until the first upload has read the folder.
+    assert saver.is_alive()
+    assert read_checkpoint(tmp_path / "latest").manifest["step"] == first_step
+
+    api.release_uploads.set()
+    saver.join(timeout=10)
+    assert not saver.is_alive()
+    trainer.wait_for_uploads()
+
+    assert [c.message for c in api.commits] == [
+        f"latest @ step {first_step}",
+        f"latest @ step {trainer.global_step}",
+    ]
+
+
+def test_failed_upload_is_logged_not_raised(tmp_path, fake_hub, monkeypatch):
+    trainer = build_hub_trainer(tmp_path)
+
+    def boom(*args, **kwargs):
+        raise ConnectionError("hub down")
+
+    monkeypatch.setattr(fake_hub.instance, "create_commit", boom)
+    take_optimizer_step(trainer)
+    trainer.save_checkpoint("latest")
+    assert trainer.uploader.wait_all() is False
+    # The local checkpoint survives for a manual re-push.
+    assert read_checkpoint(tmp_path / "latest").training_state is not None
+
+
+def test_checkpointing_never_touches_wandb_artifacts(tmp_path, monkeypatch):
+    import wandb
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("checkpoints must not go to W&B")
+
+    monkeypatch.setattr(wandb, "Artifact", forbidden)
+    monkeypatch.setattr(wandb, "log_artifact", forbidden)
+    trainer = build_trainer(tmp_path)
+    take_optimizer_step(trainer)
+    trainer.save_checkpoint("latest")
+    trainer.wait_for_uploads()
+
+    assert not hasattr(ExperimentLogger, "log_model_artifact")

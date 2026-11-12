@@ -1,0 +1,22 @@
+_target_: savannah.tasks.franka_sim.FrankaSimTask
+# Policy in/out: [x, y, z, qw, qx, qy, qz, gripper]. Model configs that read
+# ${task.state_dim} / ${task.action_dim} pick these up.
+state_dim: 8
+action_dim: 8
+config:
+  _target_: savannah.data.dataset.DataSetConfig
+  repo_id: suhrudhsarathy/franka_sim_hammer_nails
+  env_name: hammer_nails # franka_sim task: hit one nail, chosen per episode
+  fps: 20
+  # target_mask marks the nail to hit (from the top camera), so the policy
+  # knows the target without the language instruction.
+  cameras: ["front", "wrist", "target_mask"]
+  action_key: action.ee_pose # policy in/out: [ee_pose (xyz + wxyz quat), gripper command]
+  image_size: 224 # dataset videos are 256x256
+  obs_horizon: 2
+  action_horizon: ${model.action_horizon}
+  batch_size: 32
+  num_workers: 4
+  train_fraction: 0.98 # 500 episodes -> 10 for validation
+  use_language: false # the target mask carries the target instead
+  augmentation: ${augmentation}

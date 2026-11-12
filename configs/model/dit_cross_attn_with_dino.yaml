@@ -5,9 +5,11 @@ state_embed_dim: '${eval: "${model.embed_dim} // 4"}'
 decoder_num_blocks: 8
 decoder_num_attn_heads: '${eval: "max(4, ${model.embed_dim}//64)"}'
 decoder_feedforward_dim: '${eval: "2 * ${model.embed_dim}"}'
-state_dim: 4
+# Tasks that declare their dims (e.g. configs/task/franka_*.yaml) set them;
+# the rest are Metaworld's 4 (ee xyz + gripper).
+state_dim: ${oc.select:task.state_dim,4}
 num_obs: ${task.config.obs_horizon}
-action_dim: 4
+action_dim: ${oc.select:task.action_dim,4}
 action_horizon: 24
 num_cameras: ${len:${task.config.cameras}}
 use_rope: true

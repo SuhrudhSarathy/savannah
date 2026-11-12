@@ -17,6 +17,25 @@ import mujoco  # noqa: E402
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
 from metaworld.env_dict import MULTI_INSTANCE_V3_ENVIRONMENTS  # noqa: E402
+from metaworld.sawyer_xyz_env import SawyerMocapBase  # noqa: E402
+
+# Metaworld (pinned to mujoco==3.3.0, overridden to >=4 for franka_sim) writes
+# hard-coded 11-value weld rows into model.eq_data, but MuJoCo 4 has 12 per
+# row (mjNEQDATA). The first 11 keep their meaning (anchor, relpose,
+# torquescale); the new 12th keeps its compiled default. Remove once the
+# Metaworld fork writes `eq_data[i, :11]` itself.
+_WELD_DATA = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 5.0])
+
+
+def _reset_mocap_welds(self) -> None:
+    if self.model.nmocap > 0 and self.model.eq_data is not None:
+        for i in range(self.model.eq_data.shape[0]):
+            if self.model.eq_type[i] == mujoco.mjtEq.mjEQ_WELD:
+                self.model.eq_data[i, : len(_WELD_DATA)] = _WELD_DATA
+
+
+if getattr(mujoco, "mjNEQDATA", len(_WELD_DATA)) != len(_WELD_DATA):
+    SawyerMocapBase.reset_mocap_welds = _reset_mocap_welds
 
 # We only need the current ee position and the gripper state
 STATE_KEEP_INDICES = [0, 1, 2, 3]

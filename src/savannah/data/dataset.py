@@ -20,6 +20,11 @@ class DataSetConfig:
     env_name: Optional[str] = None
     cameras: List[str] = field(default_factory=list)
 
+    # Dataset feature loaded (over the action horizon) as the action target.
+    # Datasets with several action representations store them under separate
+    # keys, e.g. franka_sim's "action.ee_pose" / "action.joint_pos".
+    action_key: str = "action"
+
     # Which on-disk/on-hub layout to read from. "native" reads a task's own
     # bespoke local cache format (e.g. ABCPutBottlesTask's flat per-episode
     # dirs under `root`); "lerobot" reads a standard LeRobotDataset from the
@@ -129,7 +134,7 @@ class LerobotDatasetWrapper:
 
         deltas = {
             ObservationKey.state: obs_timestamps,
-            ObservationKey.actions: act_timestamps,
+            config.action_key: act_timestamps,
         }
 
         for cam in config.cameras:
@@ -142,8 +147,15 @@ class LerobotDatasetWrapper:
         return deltas
 
     @classmethod
-    def create_loaders(cls, config: DataSetConfig, device: torch.device):
-        deltas = cls._build_timestamps(config)
+    def create_loaders(
+        cls,
+        config: DataSetConfig,
+        device: torch.device,
+        delta_timestamps: dict | None = None,
+    ):
+        """`delta_timestamps` overrides which features are loaded at which
+        offsets (default: _build_timestamps(config))."""
+        deltas = delta_timestamps or cls._build_timestamps(config)
 
         image_transforms = None
         if config.image_size is not None:
@@ -181,11 +193,7 @@ class LerobotDatasetWrapper:
             val_dataset = _LanguageKeyDataset(val_dataset)
 
         if config.cache_in_memory:
-            image_keys = {
-                k
-                for k in deltas
-                if k != ObservationKey.state and k != ObservationKey.actions
-            }
+            image_keys = {k for k in deltas if k.startswith("observation.image")}
             train_dataset = _CachedDataset(train_dataset, image_keys)
             val_dataset = _CachedDataset(val_dataset, image_keys)
 
@@ -219,6 +227,7 @@ class LerobotDatasetWrapper:
         device: torch.device,
         episode_index: int,
         frame_index: int | None = 0,
+        delta_timestamps: dict | None = None,
     ) -> DataLoader:
         """Builds a batch_size=1 loader over one fixed episode, bypassing the
         (randomly shuffled) train/val split entirely.
@@ -233,7 +242,7 @@ class LerobotDatasetWrapper:
         exact same sample(s), instead of each pulling an independently random
         batch from `create_loaders`' shuffled train loader / re-split val set.
         """
-        deltas = cls._build_timestamps(config)
+        deltas = delta_timestamps or cls._build_timestamps(config)
 
         image_transforms = None
         if config.image_size is not None:

@@ -50,7 +50,6 @@ def main(cfg: DictConfig) -> None:
         project_name=cfg.wandb.project,
         config=OmegaConf.to_container(cfg, resolve=True),
         enable_logging=cfg.wandb.enable_logging,
-        enable_model_checkpoint=cfg.wandb.enable_model_checkpoint,
         run_name=cfg.wandb.run_name,
     )
 

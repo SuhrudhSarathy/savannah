@@ -3,8 +3,8 @@ import torch.nn.functional as F
 from omegaconf import DictConfig
 from tqdm import tqdm
 
-from savannah.bundle import save_bundle
 from savannah.models.policy import Policy
+from savannah.pretrained import save_pretrained
 from savannah.tasks import BaseRobotTask
 from savannah.trainer.ema import EMA
 from savannah.utils.observation import ObservationKey
@@ -16,7 +16,7 @@ def overfit_on_batch(
     steps: int,
     lr: float,
     log_every: int = 50,
-    bundle_path: str | None = None,
+    save_dir: str | None = None,
     run_cfg: DictConfig | None = None,
     task: BaseRobotTask | None = None,
     ema_decay: float = 0.999,
@@ -68,21 +68,25 @@ def overfit_on_batch(
         if step % log_every == 0:
             pbar.set_postfix(loss=f"{loss_value:.6f}")
 
-    if bundle_path is not None:
-        save_bundle(
-            bundle_path,
+    if save_dir is not None:
+        final_loss = losses[-1] if losses else None
+        save_pretrained(
+            save_dir,
             run_cfg,
             task,
             ema.shadow.state_dict(),
             training_state={
                 "model_state_dict": policy.state_dict(),
                 "global_step": steps,
-                "loss": losses[-1] if losses else None,
+                "loss": final_loss,
                 "episode_index": episode_index,
                 "frame_index": frame_index,
             },
+            step=steps,
+            metrics={} if final_loss is None else {"loss": final_loss},
+            extra={"episode_index": episode_index, "frame_index": frame_index},
         )
-        print(f"Saved overfit bundle to {bundle_path}")
+        print(f"Saved overfit checkpoint to {save_dir}")
 
     return losses
 

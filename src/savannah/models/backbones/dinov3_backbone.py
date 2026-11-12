@@ -31,12 +31,20 @@ class DinoV3Backbone(VisionFeatureExtractor):
         self.model_output_dim = self.model.config.hidden_size
         self._out_channels = self.model_output_dim
 
+        # DINOv3 uses rotary position embeddings, so it takes any multiple of
+        # the patch size, not just the checkpoint's own image_size (224).
+        patch_size = self.model.config.patch_size
+        if image_size % patch_size != 0:
+            raise ValueError(
+                f"DinoV3Backbone needs image_size divisible by the patch size "
+                f"{patch_size} of {base_model}, got {image_size}"
+            )
+        self.image_size = image_size
+
         if use_eos_only:
             self._tokens_per_image = 1
         else:
-            self.patches_per_side = (
-                self.model.config.image_size // self.model.config.patch_size
-            )
+            self.patches_per_side = image_size // patch_size
             self._tokens_per_image = (
                 self.patches_per_side * self.patches_per_side + 1
             )  # + CLS token

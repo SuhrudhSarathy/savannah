@@ -32,7 +32,7 @@ def test_repo_experiments_yaml_loads():
 def test_name_drives_run_name_and_default_checkpoint_dir():
     exp = multi_run.Experiment(name="exp_a", overrides=["model=unet"])
     cmd, _ = multi_run.build_command(exp)
-    # Hydra `name` feeds wandb.run_name, the artifact name, and
+    # Hydra `name` feeds wandb.run_name, the HF Hub repo id, and
     # checkpoints/${name}, so per-experiment dirs need no explicit override.
     assert "name=exp_a" in cmd
     assert not any(a.startswith("trainer.checkpoint.checkpoint_dir=") for a in cmd)
@@ -83,3 +83,15 @@ def test_experiment_overrides_come_last_so_they_win():
 def test_gpu_env_vars(kwargs, env_key, value):
     _, env = multi_run.build_command(multi_run.Experiment(name="e"), **kwargs)
     assert env[env_key] == value
+
+
+def test_single_gpu_plan_never_exceeds_the_experiment_count():
+    gb = 1024
+    # One run alone on an 80 GB GPU gets all of it, not a 1/8 share.
+    assert multi_run.single_gpu_plan(80 * gb, 10 * gb, 1) == (1, None)
+    # Two runs that fit side by side split it.
+    assert multi_run.single_gpu_plan(80 * gb, 10 * gb, 2) == (2, 0.475)
+    # More experiments than slots: as many as fit, in batches.
+    assert multi_run.single_gpu_plan(80 * gb, 24 * gb, 6) == (3, 0.3167)
+    # A run bigger than the free VRAM still gets one slot.
+    assert multi_run.single_gpu_plan(8 * gb, 24 * gb, 3) == (1, None)

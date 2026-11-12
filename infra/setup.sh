@@ -53,12 +53,30 @@ fi
 echo "==> Installing project dependencies (with simulators)..."
 uv sync --extra sim
 
+# franka_sim isn't on PyPI (private repo): install it from a local checkout,
+# after `uv sync` (an exact sync would remove it again).
+echo "==> Installing franka_sim (optional, for franka_sim sim eval)..."
+if [ -n "${FRANKA_SIM_PATH:-}" ]; then
+    uv pip install -e "$FRANKA_SIM_PATH"
+else
+    echo "    FRANKA_SIM_PATH not set — skipping. franka_* tasks still train, but sim eval needs it:"
+    echo "    git clone git@github.com:SuhrudhSarathy/franka_sim.git && FRANKA_SIM_PATH=\$PWD/franka_sim bash infra/setup.sh"
+fi
+
 echo "==> Configuring W&B..."
 if [ -n "${WANDB_API_KEY:-}" ]; then
     uv run wandb login "$WANDB_API_KEY"
 else
     echo "    WANDB_API_KEY not set."
     echo "    Run: uv run wandb login <your-api-key>"
+fi
+
+echo "==> Configuring Hugging Face Hub (checkpoints)..."
+if [ -n "${HF_TOKEN:-}" ]; then
+    uv run hf auth login --token "$HF_TOKEN"
+else
+    echo "    HF_TOKEN not set — checkpoints can't be pushed to the Hub."
+    echo "    Run: uv run hf auth login   (or train with trainer.checkpoint.push_to_hub=false)"
 fi
 
 echo ""

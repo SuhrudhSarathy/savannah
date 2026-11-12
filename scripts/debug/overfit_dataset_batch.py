@@ -52,7 +52,7 @@ def main(cfg: DictConfig) -> None:
         f"         obs_horizon={cfg_t.obs_horizon}  action_horizon={cfg_t.action_horizon}  image_size={cfg_t.image_size}  cameras={cfg_t.cameras}"
     )
 
-    bundle_path = os.path.join(cfg.overfit.checkpoint_dir, "overfit_final.bundle")
+    save_dir = os.path.join(cfg.overfit.checkpoint_dir, "overfit_final")
     frame_desc = (
         f"cycling through {len(batch)} frames, batch_size=1 each"
         if isinstance(batch, list)
@@ -68,7 +68,7 @@ def main(cfg: DictConfig) -> None:
         steps=cfg.overfit.steps,
         lr=cfg.overfit.lr,
         log_every=cfg.overfit.log_every,
-        bundle_path=bundle_path,
+        save_dir=save_dir,
         run_cfg=cfg,
         task=task,
         ema_decay=cfg.overfit.ema_decay,

@@ -1,15 +1,17 @@
 import os
 import signal
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import torch
 from hydra.core.config_store import ConfigStore
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from torch.optim import AdamW
 from tqdm import tqdm
 
-from savannah.bundle import BUNDLE_SUFFIX, read_bundle, save_bundle
+from savannah.hub import HubCheckpointUploader
 from savannah.models.policy import Policy
+from savannah.pretrained import read_checkpoint, save_pretrained
 from savannah.tasks import BaseRobotTask
 from savannah.trainer.ema import EMA
 from savannah.trainer.scheduler import get_custom_scheduler
@@ -43,7 +45,12 @@ class EvalParams:
 @dataclass
 class CheckpointParams:
     checkpoint_dir: str = "checkpoints"
-    artifact_name: str = "model"
+    # Push every checkpoint to the Hugging Face Hub repo `hub_repo_id`, one
+    # subfolder per checkpoint kind. training_state.pt is never pushed.
+    push_to_hub: bool = False
+    hub_repo_id: str | None = None
+    hub_private: bool = True
+    # A local checkpoint dir (e.g. checkpoints/<run>/latest) or run dir.
     resume_from: str | None = None
 
 
@@ -119,44 +126,69 @@ class PolicyTrainer:
 
         os.makedirs(self.config.checkpoint.checkpoint_dir, exist_ok=True)
 
-    def save_checkpoint(self, name: str, success_rate: float):
-        """Saves a bundle with the EMA weights and everything needed to resume."""
-        training_state = {
-            "model_state_dict": self.policy.state_dict(),
-            "optimizer_state_dict": self.optimizer.state_dict(),
-            "scheduler_state_dict": self.scheduler.state_dict(),
-            "global_step": self.global_step,
-            "success_rate": success_rate,
-            "best_val_loss": self.best_val_loss,
-            "best_success_rate": self.best_success_rate,
-        }
-        # Permanent per-step archive — one snapshot per global_step, never overwritten.
-        step_dir = os.path.join(
-            self.config.checkpoint.checkpoint_dir, str(self.global_step)
-        )
-        self._write_bundle(os.path.join(step_dir, name), training_state)
+        self.uploader: HubCheckpointUploader | None = None
+        if self.config.checkpoint.push_to_hub:
+            if not self.config.checkpoint.hub_repo_id:
+                raise ValueError(
+                    "trainer.checkpoint.push_to_hub=true needs "
+                    "trainer.checkpoint.hub_repo_id (e.g. <hf_user>/<run name>)"
+                )
+            self.uploader = HubCheckpointUploader(
+                self.config.checkpoint.hub_repo_id,
+                private=self.config.checkpoint.hub_private,
+                run_name=OmegaConf.select(run_cfg, "name"),
+                model_target=OmegaConf.select(run_cfg, "model._target_"),
+                dataset=OmegaConf.select(run_cfg, "task.config.repo_id"),
+            )
 
-        # Rolling mirror of the most recent checkpoint of each kind, for
-        # resuming/uploading without knowing which step it was saved at.
-        latest_dir = os.path.join(self.config.checkpoint.checkpoint_dir, "latest")
-        self._write_bundle(os.path.join(latest_dir, name), training_state)
+    def save_checkpoint(self, name: str, metrics: dict[str, float] | None = None):
+        """Saves `checkpoint_dir/<name>/` (EMA weights + everything needed to
+        resume) and, with push_to_hub, uploads it to `<hub_repo_id>/<name>/`."""
+        path = Path(self.config.checkpoint.checkpoint_dir) / name
+        if self.uploader is not None:
+            # Don't replace the folder while its previous upload still reads it.
+            self.uploader.wait_for(name)
 
-    def _write_bundle(self, stem: str, training_state: dict):
-        save_bundle(
-            stem + BUNDLE_SUFFIX,
+        save_pretrained(
+            path,
             self.run_cfg,
             self.task,
             self.ema.shadow.state_dict(),
-            training_state=training_state,
+            training_state={
+                "model_state_dict": self.policy.state_dict(),
+                "optimizer_state_dict": self.optimizer.state_dict(),
+                "scheduler_state_dict": self.scheduler.state_dict(),
+                "global_step": self.global_step,
+                "best_val_loss": self.best_val_loss,
+                "best_success_rate": self.best_success_rate,
+            },
+            step=self.global_step,
+            metrics=metrics,
         )
 
+        if self.uploader is not None:
+            self.uploader.push(path, name, self.global_step, metrics)
+
+    def wait_for_uploads(self):
+        if self.uploader is not None:
+            self.uploader.wait_all()
+
     def load_checkpoint(self, path: str):
-        """Loads a bundle saved by save_checkpoint() and restores full training state."""
-        logger.info("Resuming training from bundle: {}", path)
-        contents = read_bundle(path)
+        """Restores full training state from a local checkpoint saved by
+        save_checkpoint(): a checkpoint dir, or a run dir (uses its latest/)."""
+        checkpoint_dir = Path(path)
+        if not checkpoint_dir.exists():
+            raise FileNotFoundError(
+                f"No local checkpoint at {path} (training state is never pushed "
+                "to the Hub, so resuming needs the local checkpoint dir)"
+            )
+        if not (checkpoint_dir / "manifest.json").is_file():
+            checkpoint_dir = checkpoint_dir / "latest"
+        logger.info("Resuming training from checkpoint: {}", checkpoint_dir)
+        contents = read_checkpoint(checkpoint_dir)
         checkpoint = contents.training_state
         if checkpoint is None:
-            raise ValueError(f"{path} has no training state to resume from")
+            raise ValueError(f"{checkpoint_dir} has no training state to resume from")
 
         self.policy.load_state_dict(checkpoint["model_state_dict"])
         self.ema.shadow.load_state_dict(contents.ema_weights)
@@ -185,9 +217,10 @@ class PolicyTrainer:
 
         def _sigint_handler(sig, frame):
             logger.warning(
-                "Interrupted at step {} — saving latest.bundle…", self.global_step
+                "Interrupted at step {} — saving latest checkpoint…", self.global_step
             )
-            self.save_checkpoint("latest", self.best_val_loss)
+            self.save_checkpoint("latest")
+            self.wait_for_uploads()
             self.logger.finish()
             raise SystemExit(0)
 
@@ -274,11 +307,15 @@ class PolicyTrainer:
                 )
 
                 logger.info("Reconstruction Loss: {:.6f}", avg_reconstruction_loss)
-                self.save_checkpoint("latest", avg_reconstruction_loss)
+                val_metrics = {
+                    "val_loss": avg_val_loss,
+                    "val_reconstruction_loss": avg_reconstruction_loss,
+                }
+                self.save_checkpoint("latest", val_metrics)
 
                 if avg_reconstruction_loss < self.best_val_loss:
                     self.best_val_loss = avg_reconstruction_loss
-                    self.save_checkpoint("best_model", avg_reconstruction_loss)
+                    self.save_checkpoint("best_model", val_metrics)
                     logger.success("New best val loss: {:.6f}", self.best_val_loss)
 
             # 8. Live sim eval & video upload (own cadence — typically much rarer
@@ -309,7 +346,10 @@ class PolicyTrainer:
 
                 if success_rate > self.best_success_rate:
                     self.best_success_rate = success_rate
-                    self.save_checkpoint("best_model_success", success_rate)
+                    self.save_checkpoint(
+                        "best_model_success",
+                        {"success_rate": success_rate, "mean_reward": mean_reward},
+                    )
                     logger.success(
                         "New best success rate: {:.3f}", self.best_success_rate
                     )
@@ -319,27 +359,6 @@ class PolicyTrainer:
 
         pbar.close()
 
-        checkpoint_aliases = {
-            "best_model.bundle": "best",
-            "best_model_success.bundle": "best_success",
-            "latest.bundle": "latest",
-        }
-
-        if self.logger.enable_model_checkpoint:
-            for ckpt_name, alias in checkpoint_aliases.items():
-                local_path = os.path.join(
-                    self.config.checkpoint.checkpoint_dir, "latest", ckpt_name
-                )
-                if os.path.exists(local_path):
-                    self.logger.log_model_artifact(
-                        model_path=local_path,
-                        artifact_name=self.config.checkpoint.artifact_name,
-                        aliases=[alias],
-                    )
-        else:
-            logger.debug(
-                "wandb.enable_model_checkpoint is false — skipping W&B artifact upload."
-            )
-
+        self.wait_for_uploads()
         self.logger.finish()
         print("Training Complete!")
