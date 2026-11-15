@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from diffusers.models.normalization import LayerNorm
 
 from savannah.nn.cross_attention import CrossAttention
 
@@ -14,9 +13,9 @@ class AttentionPoolingBlock(nn.Module):
         self.feedforward_dim: int = feedforward_dim
 
         self.attn = CrossAttention(embed_dim, num_attn_heads)
-        self.pre_norm = LayerNorm(embed_dim)
-        self.kv_norm = LayerNorm(embed_dim)
-        self.ffn_norm = LayerNorm(embed_dim)
+        self.pre_norm = nn.LayerNorm(embed_dim)
+        self.kv_norm = nn.LayerNorm(embed_dim)
+        self.ffn_norm = nn.LayerNorm(embed_dim)
         self.ffn = nn.Sequential(
             nn.Linear(embed_dim, feedforward_dim),
             nn.GELU(),

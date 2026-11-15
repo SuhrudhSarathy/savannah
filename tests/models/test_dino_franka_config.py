@@ -92,7 +92,9 @@ def dataset_batch(cfg):
 
 @pytest.mark.parametrize("image_size", [224, 128])
 def test_dino_policy_trains_and_acts_on_hammer_nails(monkeypatch, image_size):
-    cfg = compose_cfg("franka_hammer_nails", f"task.config.image_size={image_size}")
+    cfg = compose_cfg(
+        "franka_hammer_nails_long", f"task.config.image_size={image_size}"
+    )
     assert cfg.model.state_dim == 8 and cfg.model.action_dim == 8
     assert cfg.model.num_cameras == 3  # front, wrist, target_mask
 
@@ -126,7 +128,7 @@ def test_metaworld_default_keeps_its_dims():
 
 
 def test_franka_task_rejects_other_dims(monkeypatch):
-    cfg = compose_cfg("franka_hammer_nails", "task.state_dim=4")
+    cfg = compose_cfg("franka_hammer_nails_long", "task.state_dim=4")
     with pytest.raises(InstantiationException, match="8-dim"):
         instantiate(cfg.task, device=torch.device("cpu"))
 

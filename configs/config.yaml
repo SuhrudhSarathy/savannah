@@ -1,6 +1,6 @@
 defaults:
   - model: dit_cross_attn_with_dino
-  - task: metaworld_assembly
+  - task: franka_hammer_nails_long
   - trainer: default
   - augmentation: default
   - _self_
@@ -10,6 +10,6 @@ name: ${hydra:runtime.choices.model}_${hydra:runtime.choices.task}
 wandb:
   project: savannah
   run_name: ${name}
-  enable_logging: true # W&B is used for logging only; checkpoints go to the HF Hub
+  enable_logging: false # W&B is used for logging only; checkpoints go to the HF Hub
 
 log_level: INFO # DEBUG | INFO | WARNING | ERROR

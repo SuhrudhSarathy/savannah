@@ -74,6 +74,10 @@ class BaseRobotTask(ABC):
             self._env = self._make_env(render_mode)
         return self._env
 
+    def begin_eval(self) -> None:  # noqa: B027 — optional hook, no-op by default
+        """Called by `run_rollout` before its first episode. Override to
+        reset per-evaluation state (e.g. a seed counter)."""
+
     def reset_env(self, env: gym.Env, **kwargs) -> tuple:
         """Resets `env` for a new episode.
 

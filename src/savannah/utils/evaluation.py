@@ -74,6 +74,7 @@ def run_rollout(
     was_training = policy.training
     policy.eval()
 
+    task.begin_eval()
     episodes: list[EpisodeResult] = []
     for ep in range(num_episodes):
         if on_episode_start is not None:

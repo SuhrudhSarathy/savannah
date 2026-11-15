@@ -90,12 +90,20 @@ class DiTCrossAttnBlock(nn.Module):
         # x: is the tokens that are input to the decoder and the condition tokens
 
         # AdaLN stuff
-        beta1, gamma1, alpha1, beta2, gamma2, alpha2, beta3, gamma3, alpha3 = (
-            torch.split(
-                self.adaln_block(x_cond),
-                self.embed_dim,
-                dim=-1,
-            )
+        (
+            beta1,
+            gamma1,
+            alpha1,
+            beta2,
+            gamma2,
+            alpha2,
+            beta3,
+            gamma3,
+            alpha3,
+        ) = torch.split(
+            self.adaln_block(x_cond),
+            self.embed_dim,
+            dim=-1,
         )
 
         # Masked-Self Attention Block

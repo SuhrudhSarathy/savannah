@@ -45,9 +45,11 @@ Other privileged extras (`observation.environment_state`, `cond.*`) aren't
 used: the policy sees only proprioception, cameras and (optionally) the
 language instruction, matching franka_sim's `vision` benchmark protocol.
 
-Episodes are reset with seeds `EVAL_SEED, EVAL_SEED + 1, ...` (franka_sim's
-held-out evaluation seeds; demos are recorded below them), so every policy
-sees the same layouts.
+Eval follows franka_sim's benchmark protocol (`franka_sim.benchmark.evaluate`):
+episode k of every rollout is reset with seed `EVAL_SEED + k` (held-out seeds;
+demos are recorded below them) and, for single tasks, target `k % num_targets`,
+so every policy sees the same layouts and a balanced set of targets. Acting on
+a wrong target ends the episode as a failure.
 
 franka_sim is an optional, separately installed package (its repo is
 private, and it needs mujoco>=4): install it into this venv with e.g.
@@ -153,6 +155,29 @@ class FrankaSimObservation(gym.ObservationWrapper):
                 )
             obs[f"rgb_{MASK_CAMERA}"] = np.repeat(mask[..., None], 3, axis=2)
         return obs
+
+
+class FrankaSimWrongTarget(gym.Wrapper):
+    """Ends an episode once the policy acts on a wrong target, as franka_sim's
+    benchmark does: FrankaEnv itself only terminates on success. The flag is
+    latched (`info["wrong_target"]` stays True to the end) and the episode
+    counts as a failure."""
+
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+        self._wrong = False
+
+    def reset(self, **kwargs):
+        self._wrong = False
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        self._wrong |= bool(info.get("wrong_target", False))
+        if self._wrong:
+            info = {**info, "wrong_target": True, "success": False}
+            terminated = True
+        return obs, reward, terminated, truncated, info
 
 
 class FrankaSimTask(BaseRobotTask):
@@ -377,15 +402,24 @@ class FrankaSimTask(BaseRobotTask):
         )
         self._num_subgoals = env.env.task.num_steps
         mask_size = tuple(features[MASK_KEY]["shape"][:2]) if self._use_mask else None
-        return FrankaSimObservation(env, mask_size)
+        return FrankaSimWrongTarget(FrankaSimObservation(env, mask_size))
+
+    def begin_eval(self) -> None:
+        # Every rollout starts again at episode 0, so periodic evals during
+        # training are scored on the same layouts.
+        self._next_seed = EVAL_SEED
 
     def reset_env(self, env: gym.Env, seed: Optional[int] = None, **kwargs):
         # Other tasks' reset options (e.g. ManiSkill's pick_color) arrive in
         # kwargs from scripts/eval/eval.py and are ignored here.
+        from franka_sim.benchmark import episode_options
+
         if seed is None:
             seed = self._next_seed
             self._next_seed += 1
-        obs, info = env.reset(seed=seed)
+        # Episode k = seed - EVAL_SEED; single tasks get target k % num_targets.
+        options = episode_options(self.config.env_name, max(seed - EVAL_SEED, 0))
+        obs, info = env.reset(seed=seed, options=options)
         self._instruction = str(info["instruction"])
         return obs, info
 

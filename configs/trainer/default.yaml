@@ -17,7 +17,7 @@ eval:
 
 checkpoint:
   checkpoint_dir: checkpoints/${name} # local: <dir>/{latest,best_model,best_model_success}/
-  push_to_hub: true # push every checkpoint to the HF Hub (needs `hf auth login` or HF_TOKEN)
+  push_to_hub: false # push every checkpoint to the HF Hub (needs `hf auth login` or HF_TOKEN)
   hub_repo_id: suhrudhsarathy/${name} # one model repo per run, one subfolder per checkpoint
   hub_private: true
   resume_from: null # local checkpoint dir, e.g. checkpoints/<run>/latest

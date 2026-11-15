@@ -5,18 +5,16 @@ state_dim: 8
 action_dim: 8
 config:
   _target_: savannah.data.dataset.DataSetConfig
-  repo_id: suhrudhsarathy/franka_sim_hammer_nails
-  env_name: hammer_nails # franka_sim task: hit one nail, chosen per episode
+  repo_id: suhrudhsarathy/franka_sim_hammer_nails_long2
+  env_name: hammer_nails_long # franka_sim task the dataset was recorded from
   fps: 20
-  # target_mask marks the nail to hit (from the top camera), so the policy
-  # knows the target without the language instruction.
-  cameras: ["front", "wrist", "target_mask"]
+  cameras: ["front", "wrist", "side"]
   action_key: action.ee_pose # policy in/out: [ee_pose (xyz + wxyz quat), gripper command]
-  image_size: 224 # dataset videos are 256x256
+  image_size: 224 # dataset videos are 256x256; resized for the vision backbone
   obs_horizon: 2
   action_horizon: ${model.action_horizon}
-  batch_size: 32
+  batch_size: 1
   num_workers: 4
   train_fraction: 0.98 # 500 episodes -> 10 for validation
-  use_language: false # the target mask carries the target instead
+  use_language: false # one instruction: "pick up the hammer and hit all the nails"
   augmentation: ${augmentation}
