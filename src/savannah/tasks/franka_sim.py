@@ -1,21 +1,26 @@
 """Tasks from franka_sim (https://github.com/SuhrudhSarathy/franka_sim), a
 MuJoCo Franka Panda benchmark, trained from its LeRobot exports.
 
-Policy input and output share one representation, an end-effector pose plus
-a gripper command (8 values):
+The action mode is picked by `config.action_key` (see ACTION_MODES). Either
+way, policy input and output share one representation (8 values), the arm
+part of which is:
 
-    [x, y, z, qw, qx, qy, qz, gripper]
+    action.ee_pose (default)   [x, y, z, qw, qx, qy, qz, gripper]
+        state  (input):  the measured end-effector pose (`observation.ee_pose`)
+        action (output): the commanded pose (`action.ee_pose`), rolled out
+                         with franka_sim's `action_mode="ee_pose"` (IK to
+                         joint targets in the env)
+    action.joint_pos           [q1 .. q7, gripper]
+        state  (input):  the measured joint positions (the first 7 values of
+                         `observation.state`)
+        action (output): the commanded joint targets (`action.joint_pos`),
+                         rolled out with `action_mode="joint_pos"`
 
-    state  (input):  the measured end-effector pose at each obs frame
-                     (`observation.ee_pose`) + the gripper command in force
-                     at that frame, i.e. the previous action's gripper value
-                     (0 = open at the start of an episode, as franka_sim
-                     resets it)
-    action (output): the commanded end-effector pose + gripper command
-                     (`action.ee_pose`), rolled out with franka_sim's
-                     `action_mode="ee_pose"` (IK to joint targets in the env)
+The state's last value is the gripper command in force at each obs frame, i.e.
+the previous action's gripper value (0 = open at the start of an episode, as
+franka_sim resets it).
 
-Positions are metres in the world frame; quaternions are wxyz; the gripper
+ee_pose details: positions are metres in the world frame; quaternions are wxyz; the gripper
 command is a closure in [0, 1] (0 = open, 1 = closed). q and -q are the same
 rotation, so quaternions are canonicalized to qx >= 0: the gripper points
 down (home orientation (0, 1, 0, 0)) and its yaw stays within about +-90
@@ -24,14 +29,16 @@ commanded quaternions already satisfy it; a few measured ones (~0.04% of
 kitting frames) don't.
 
 Both are min-max normalized to [-1, 1] with ONE set of ranges, so input and
-output live in the same space: x/y/z and the quaternion use the
-`action.ee_pose` range from the dataset's `meta/stats.json`, the gripper
-uses its full [0, 1] range. Min-max rather than z-scoring because
+output live in the same space: the arm part uses the range of
+`config.action_key` from the dataset's `meta/stats.json`, the gripper uses
+its full [0, 1] range. Min-max rather than z-scoring because
 `run_rollout` clamps policy actions to [-1, 1] before `postprocess_action`.
 Dimensions that never change in the commands (qw / qz of a top-down gripper)
 are unnormalized back to their constant value, so the policy can't tilt the
-gripper by accident; measured poses may sit slightly outside the command
-range, which only matters for the (unclamped) input.
+gripper by accident; measured values may sit slightly outside the command
+range, which only matters for the (unclamped) input. Before `env.step()`,
+ee_pose actions are clipped to the demos' workspace and joint targets to the
+Panda joint limits.
 
 Cameras (`config.cameras`): franka_sim's `observation.images.<cam>` videos.
 `target_mask` adds `observation.images.target_mask`, a binary (0/255, 3
@@ -58,6 +65,7 @@ an env is built, so training works without it.
 """
 
 from collections import deque
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 import gymnasium as gym
@@ -74,7 +82,9 @@ STATE_DIM = 8
 ACTION_DIM = 8
 
 POSE_KEY = "observation.ee_pose"  # (7) measured x y z qw qx qy qz
+JOINT_STATE_KEY = "observation.state"  # (8) 7 joint positions + gripper width
 ACTION_KEY = "action.ee_pose"  # (8) commanded x y z qw qx qy qz + gripper
+JOINT_ACTION_KEY = "action.joint_pos"  # (8) 7 joint targets + gripper
 QUAT = slice(3, 7)
 QX = 4
 GRIPPER = 7
@@ -88,6 +98,47 @@ EVAL_SEED = 100_000
 MASK_CAMERA = "target_mask"
 MASK_KEY = f"observation.images.{MASK_CAMERA}"
 MASK_RENDER_CAMERA = "top"
+
+# Panda joint position limits (rad), from franka_sim's mjx_panda.xml actuator
+# ctrlranges, plus the gripper closure command in [0, 1].
+JOINT_ACTION_LOW = np.array(
+    [-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973, 0.0],
+    dtype=np.float32,
+)
+JOINT_ACTION_HIGH = np.array(
+    [2.8973, 1.7628, 2.8973, -0.0698, 2.8973, 3.7525, 2.8973, 1.0],
+    dtype=np.float32,
+)
+
+
+@dataclass(frozen=True)
+class ActionMode:
+    """How one action representation is trained and rolled out."""
+
+    env_action_mode: str  # FrankaEnv action_mode
+    action_space: str  # recorded in checkpoint manifests
+    state_key: str  # dataset feature whose first 7 values are the arm state
+    env_state_keys: Tuple[str, ...]  # env obs keys concatenated into it
+    canonicalize_quat: bool
+
+
+# `config.action_key` -> its action mode.
+ACTION_MODES = {
+    ACTION_KEY: ActionMode(
+        env_action_mode="ee_pose",
+        action_space="ee_pose",
+        state_key=POSE_KEY,
+        env_state_keys=("ee_pos", "ee_quat"),
+        canonicalize_quat=True,
+    ),
+    JOINT_ACTION_KEY: ActionMode(
+        env_action_mode="joint_pos",
+        action_space="joint_position",
+        state_key=JOINT_STATE_KEY,
+        env_state_keys=("joint_pos",),
+        canonicalize_quat=False,
+    ),
+}
 
 # Added to franka_sim observations by FrankaSimObservation.
 GRIPPER_COMMAND_OBS = "gripper_command"
@@ -183,11 +234,10 @@ class FrankaSimWrongTarget(gym.Wrapper):
 class FrankaSimTask(BaseRobotTask):
     """A franka_sim benchmark task, trained from its LeRobot export.
 
-    `config.env_name` is the franka_sim task name (e.g. "hammer_nails") and
-    `config.repo_id` the LeRobot dataset recorded from it.
+    `config.env_name` is the franka_sim task name (e.g. "hammer_nails"),
+    `config.repo_id` the LeRobot dataset recorded from it, and
+    `config.action_key` the action mode (see ACTION_MODES).
     """
-
-    action_space = "ee_pose"
 
     def __init__(
         self,
@@ -198,11 +248,11 @@ class FrankaSimTask(BaseRobotTask):
     ):
         super().__init__(config, device)
         # Declared in the task config so model configs can read them; they
-        # are fixed by the [ee_pose, gripper] representation.
+        # are fixed by the [arm (7), gripper] representation of every mode.
         if (state_dim, action_dim) != (STATE_DIM, ACTION_DIM):
             raise ValueError(
                 f"FrankaSimTask's state and actions are {STATE_DIM}-dim "
-                f"[ee_pose, gripper]; got state_dim={state_dim}, "
+                f"[arm (7), gripper]; got state_dim={state_dim}, "
                 f"action_dim={action_dim}"
             )
         if not config.env_name:
@@ -210,11 +260,13 @@ class FrankaSimTask(BaseRobotTask):
                 "FrankaSimTask requires config.env_name (a franka_sim task, "
                 "e.g. 'kitting_long')"
             )
-        if config.action_key != ACTION_KEY:
+        if config.action_key not in ACTION_MODES:
             raise ValueError(
-                f"FrankaSimTask predicts {ACTION_KEY!r} ([ee_pose, gripper]); "
-                f"set config.action_key: {ACTION_KEY} (got {config.action_key!r})"
+                f"FrankaSimTask needs config.action_key in {sorted(ACTION_MODES)}, "
+                f"got {config.action_key!r}"
             )
+        self.mode = ACTION_MODES[config.action_key]
+        self.action_space = self.mode.action_space
 
         cameras = list(config.cameras)
         self._rgb_cameras = [c for c in cameras if c != MASK_CAMERA]
@@ -260,12 +312,12 @@ class FrankaSimTask(BaseRobotTask):
     def delta_timestamps(self) -> Dict[str, List[float]]:
         fps, oh = self.config.fps, self.config.obs_horizon
         obs_ts = [-(oh - 1 - i) / fps for i in range(oh)]
-        deltas = {POSE_KEY: obs_ts}
+        deltas = {self.mode.state_key: obs_ts}
         for cam in self.config.cameras:
             deltas[f"observation.images.{cam}"] = obs_ts
         # The oh commands *before* the obs frames (their gripper part is the
         # command in force at each frame), then the action horizon itself.
-        deltas[ACTION_KEY] = [
+        deltas[self.config.action_key] = [
             (i - oh) / fps for i in range(oh + self.config.action_horizon)
         ]
         return deltas
@@ -277,7 +329,7 @@ class FrankaSimTask(BaseRobotTask):
     def _get_norm_stats(self) -> Dict[str, np.ndarray]:
         """One (low, high) range for both state and actions."""
         if self._norm_stats is None:
-            stats = self._get_meta().stats[ACTION_KEY]
+            stats = self._get_meta().stats[self.config.action_key]
             low = np.asarray(stats["min"], dtype=np.float32).copy()
             high = np.asarray(stats["max"], dtype=np.float32).copy()
             low[GRIPPER], high[GRIPPER] = 0.0, 1.0
@@ -304,9 +356,12 @@ class FrankaSimTask(BaseRobotTask):
         return torch.where(const, low, (x + 1) / 2 * (high - low) + low)
 
     def _action_bounds(self) -> Tuple[np.ndarray, np.ndarray]:
-        """Raw (low, high) actions are clipped to before `env.step()`: the
+        """Raw (low, high) actions are clipped to before `env.step()`.
+        joint_pos: the Panda joint limits, gripper in [0, 1]. ee_pose: the
         position range seen in the demos (franka_sim has no workspace limit
         of its own), any unit quaternion, gripper in [0, 1]."""
+        if not self.mode.canonicalize_quat:
+            return JOINT_ACTION_LOW, JOINT_ACTION_HIGH
         s = self._get_norm_stats()
         low = np.concatenate([s["low"][:3], -np.ones(4), [0.0]])
         high = np.concatenate([s["high"][:3], np.ones(4), [1.0]])
@@ -323,17 +378,21 @@ class FrankaSimTask(BaseRobotTask):
             "low": s["low"].tolist(),
             "high": s["high"].tolist(),
             "constant_dims": np.flatnonzero(s["const"]).tolist(),
-            "quaternion": "wxyz, canonicalized to qx >= 0",
         }
+        if self.mode.canonicalize_quat:
+            entry["quaternion"] = "wxyz, canonicalized to qx >= 0"
         return {"state": entry, "actions": entry}
 
+    def _canonical(self, x: torch.Tensor) -> torch.Tensor:
+        return canonicalize_quat(x) if self.mode.canonicalize_quat else x
+
     def make_state(
-        self, ee_pose: torch.Tensor, gripper_command: torch.Tensor
+        self, arm: torch.Tensor, gripper_command: torch.Tensor
     ) -> torch.Tensor:
-        """Normalized policy state from raw (..., 7) poses and (..., 1)
-        gripper commands."""
-        raw = torch.cat([ee_pose, gripper_command], dim=-1).to(self.device).float()
-        return self._normalize(canonicalize_quat(raw))
+        """Normalized policy state from the raw (..., 7) arm state (ee pose or
+        joint positions, per the action mode) and (..., 1) gripper commands."""
+        raw = torch.cat([arm, gripper_command], dim=-1).to(self.device).float()
+        return self._normalize(self._canonical(raw))
 
     # ------------------------------------------------------------------
     # Training
@@ -342,20 +401,21 @@ class FrankaSimTask(BaseRobotTask):
         self, batch: Dict[str, Any], step: Optional[int] = None
     ) -> Dict[str, torch.Tensor]:
         oh = self.config.obs_horizon
-        pose = batch[POSE_KEY].to(self.device)
-        if pose.ndim == 2:  # obs_horizon == 1 may drop the time dim
-            pose = pose.unsqueeze(1)
+        arm = batch[self.mode.state_key].to(self.device)[..., :GRIPPER]
+        if arm.ndim == 2:  # obs_horizon == 1 may drop the time dim
+            arm = arm.unsqueeze(1)
 
-        commands = batch[ACTION_KEY].to(self.device)  # (B, oh + H, 8)
+        action_key = self.config.action_key
+        commands = batch[action_key].to(self.device)  # (B, oh + H, 8)
         gripper = commands[:, :oh, GRIPPER:].clone()  # command in force per frame
-        pad_key = f"{ACTION_KEY}_is_pad"
+        pad_key = f"{action_key}_is_pad"
         if pad_key in batch:
             # Before the episode's first command the gripper is open (0),
             # exactly as franka_sim resets it.
             gripper[batch[pad_key][:, :oh].to(self.device)] = 0.0
 
-        state = self.make_state(pose, gripper)
-        actions = self._normalize(canonicalize_quat(commands[:, oh:]))
+        state = self.make_state(arm, gripper)
+        actions = self._normalize(self._canonical(commands[:, oh:]))
 
         images = []
         for cam in self.config.cameras:
@@ -396,7 +456,7 @@ class FrankaSimTask(BaseRobotTask):
             self.config.env_name,
             render_mode=render_mode,
             render_camera=self._rgb_cameras[0] if self._rgb_cameras else "front",
-            action_mode="ee_pose",
+            action_mode=self.mode.env_action_mode,
             cameras=tuple(self._rgb_cameras),
             image_size=(h, w),
         )
@@ -424,14 +484,14 @@ class FrankaSimTask(BaseRobotTask):
         return obs, info
 
     def _obs_to_tensors(self, obs_list: List[Dict[str, Any]]) -> dict:
-        pose = np.stack(
-            [np.concatenate([o["ee_pos"], o["ee_quat"]]) for o in obs_list]
+        arm = np.stack(
+            [np.concatenate([o[k] for k in self.mode.env_state_keys]) for o in obs_list]
         ).astype(np.float32)  # (T, 7)
         gripper = np.stack([o[GRIPPER_COMMAND_OBS] for o in obs_list]).astype(
             np.float32
         )  # (T, 1)
         state = self.make_state(
-            torch.from_numpy(pose).unsqueeze(0), torch.from_numpy(gripper).unsqueeze(0)
+            torch.from_numpy(arm).unsqueeze(0), torch.from_numpy(gripper).unsqueeze(0)
         )  # (1, T, 8)
 
         images = []
@@ -459,7 +519,7 @@ class FrankaSimTask(BaseRobotTask):
 
     def postprocess_chunk(self, actions: torch.Tensor) -> None:
         # ActionChunkVisualizer draws 2D pixel coords (pusht-only); these are
-        # 3D poses, so there's nothing to draw.
+        # 3D poses / joint targets, so there's nothing to draw.
         return None
 
     def postprocess_action(self, action_tensor: torch.Tensor) -> np.ndarray:

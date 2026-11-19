@@ -9,7 +9,7 @@ config:
   env_name: hammer_nails_long # franka_sim task the dataset was recorded from
   fps: 20
   cameras: ["front", "wrist", "side"]
-  action_key: action.ee_pose # policy in/out: [ee_pose (xyz + wxyz quat), gripper command]
+  action_key: action.joint_pos # policy in/out: [7 joint positions, gripper command]; or action.ee_pose
   image_size: 224 # dataset videos are 256x256; resized for the vision backbone
   obs_horizon: 2
   action_horizon: ${model.action_horizon}

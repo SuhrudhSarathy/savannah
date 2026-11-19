@@ -60,40 +60,70 @@ def compose_cfg(task: str, *overrides: str):
         )
 
 
+# A raw arm state per action mode, and its command range.
+ARM = {
+    franka_sim.ACTION_KEY: [0.4, 0.0, 0.3, 0.0, 1.0, 0.0, 0.0],
+    franka_sim.JOINT_ACTION_KEY: [0.1, -0.2, 0.3, -1.5, 0.2, 1.5, -0.1],
+}
+RANGES = {
+    franka_sim.ACTION_KEY: (
+        [0.2, -0.5, 0.05, 0.0, 0.85, -0.5, 0.0, 0.0],
+        [0.7, 0.5, 0.6, 0.0, 1.0, 0.5, 0.0, 1.0],
+    ),
+    franka_sim.JOINT_ACTION_KEY: (
+        [-1.0, -1.0, -1.0, -2.5, -1.0, 0.5, -1.0, 0.0],
+        [1.0, 1.0, 1.0, -0.5, 1.0, 2.5, 1.0, 1.0],
+    ),
+}
+
+
 def fake_meta(cameras):
     features = {
         franka_sim.POSE_KEY: {"shape": [7]},
+        franka_sim.JOINT_STATE_KEY: {"shape": [8]},
         franka_sim.ACTION_KEY: {"shape": [8]},
+        franka_sim.JOINT_ACTION_KEY: {"shape": [8]},
         **{f"observation.images.{c}": {"shape": [256, 256, 3]} for c in cameras},
     }
-    stats = {
-        franka_sim.ACTION_KEY: {
-            "min": [0.2, -0.5, 0.05, 0.0, 0.85, -0.5, 0.0, 0.0],
-            "max": [0.7, 0.5, 0.6, 0.0, 1.0, 0.5, 0.0, 1.0],
-        }
-    }
+    stats = {key: {"min": lo, "max": hi} for key, (lo, hi) in RANGES.items()}
     return SimpleNamespace(features=features, stats=stats)
 
 
-def dataset_batch(cfg):
-    """A LeRobot-shaped batch for FrankaSimTask.format_batch."""
+def dataset_batch(cfg, task):
+    """A LeRobot-shaped batch for FrankaSimTask.format_batch, in the task's
+    action mode (`observation.state` carries a gripper width after the
+    joints, which the task drops)."""
     data = cfg.task.config
     oh, horizon, size = data.obs_horizon, cfg.model.action_horizon, data.image_size
-    pose = torch.tensor([0.4, 0.0, 0.3, 0.0, 1.0, 0.0, 0.0])
-    command = torch.cat([pose, torch.tensor([1.0])])
+    arm = torch.tensor(ARM[data.action_key])
+    measured = (
+        arm
+        if task.mode.state_key == franka_sim.POSE_KEY
+        else (torch.cat([arm, torch.tensor([0.04])]))
+    )
+    command = torch.cat([arm, torch.tensor([1.0])])
     batch = {
-        franka_sim.POSE_KEY: pose.expand(B, oh, 7).clone(),
-        franka_sim.ACTION_KEY: command.expand(B, oh + horizon, 8).clone(),
+        task.mode.state_key: measured.expand(B, oh, -1).clone(),
+        data.action_key: command.expand(B, oh + horizon, 8).clone(),
     }
     for cam in data.cameras:
         batch[f"observation.images.{cam}"] = torch.rand(B, oh, 3, size, size)
     return batch
 
 
+@pytest.mark.parametrize(
+    "action_key",
+    [franka_sim.ACTION_KEY, franka_sim.JOINT_ACTION_KEY],
+    ids=["ee_pose", "joint_pos"],
+)
 @pytest.mark.parametrize("image_size", [224, 128])
-def test_dino_policy_trains_and_acts_on_hammer_nails(monkeypatch, image_size):
+def test_dino_policy_trains_and_acts_on_hammer_nails(
+    monkeypatch, image_size, action_key
+):
     cfg = compose_cfg(
-        "franka_hammer_nails_long", f"task.config.image_size={image_size}"
+        "franka_hammer_nails_long",
+        f"task.config.image_size={image_size}",
+        f"task.config.action_key={action_key}",
     )
     assert cfg.model.state_dim == 8 and cfg.model.action_dim == 8
     assert cfg.model.num_cameras == 3  # front, wrist, target_mask
@@ -110,7 +140,8 @@ def test_dino_policy_trains_and_acts_on_hammer_nails(monkeypatch, image_size):
         (image_size // 16) ** 2 + 1
     )
 
-    batch = task.format_batch(dataset_batch(cfg))
+    assert task.mode is franka_sim.ACTION_MODES[action_key]
+    batch = task.format_batch(dataset_batch(cfg, task))
     loss = policy.compute_loss(batch)
     assert torch.isfinite(loss)
     loss.backward()

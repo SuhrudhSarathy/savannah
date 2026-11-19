@@ -15,6 +15,9 @@ from savannah.data.augmentation import AugmentationConfig, ObservationAugmenter
 from savannah.data.dataset import DataSetConfig
 from savannah.tasks.franka_sim import (
     ACTION_KEY,
+    JOINT_ACTION_HIGH,
+    JOINT_ACTION_KEY,
+    JOINT_STATE_KEY,
     MASK_CAMERA,
     MASK_KEY,
     POSE_KEY,
@@ -31,16 +34,25 @@ EE_HIGH = [0.70, 0.36, 0.58, 0.0, 1.00, 0.70, 0.0, 1.0]
 OBS_HORIZON, ACTION_HORIZON = 2, 4
 
 
+JOINT_LOW = [-1.0, -1.0, -1.0, -2.5, -1.0, 0.5, -1.0, 0.0]
+JOINT_HIGH = [1.0, 1.0, 1.0, -0.5, 1.0, 2.5, 1.0, 1.0]
+
+
 def fake_meta(with_mask: bool):
     features = {
         POSE_KEY: {"shape": [7]},
+        JOINT_STATE_KEY: {"shape": [8]},
         ACTION_KEY: {"shape": [8]},
+        JOINT_ACTION_KEY: {"shape": [8]},
         "observation.images.front": {"shape": [256, 256, 3]},
         "observation.images.wrist": {"shape": [256, 256, 3]},
     }
     if with_mask:
         features[MASK_KEY] = {"shape": [256, 256, 3]}
-    stats = {ACTION_KEY: {"min": EE_LOW, "max": EE_HIGH}}
+    stats = {
+        ACTION_KEY: {"min": EE_LOW, "max": EE_HIGH},
+        JOINT_ACTION_KEY: {"min": JOINT_LOW, "max": JOINT_HIGH},
+    }
     return SimpleNamespace(features=features, stats=stats)
 
 
@@ -71,9 +83,60 @@ def pose(x=0.4, qx=0.9, qy=0.2):
     return np.array([x, 0.1, 0.3, *q], dtype=np.float32)
 
 
-def test_requires_ee_pose_action_key(monkeypatch):
-    with pytest.raises(ValueError, match=r"action\.ee_pose"):
-        make_task(monkeypatch, action_key="action.joint_pos")
+def test_action_key_picks_the_action_mode(monkeypatch):
+    ee = make_task(monkeypatch)
+    assert ee.mode.env_action_mode == "ee_pose" and ee.action_space == "ee_pose"
+    joint = make_task(monkeypatch, action_key=JOINT_ACTION_KEY)
+    assert joint.mode.env_action_mode == "joint_pos"
+    assert joint.action_space == "joint_position"
+
+
+def test_rejects_unknown_action_key(monkeypatch):
+    with pytest.raises(ValueError, match="action_key"):
+        make_task(monkeypatch, action_key="action")
+
+
+def test_joint_mode_loads_joint_state_and_joint_commands(monkeypatch):
+    deltas = make_task(monkeypatch, action_key=JOINT_ACTION_KEY).delta_timestamps()
+    assert JOINT_STATE_KEY in deltas and JOINT_ACTION_KEY in deltas
+    assert POSE_KEY not in deltas and ACTION_KEY not in deltas
+
+
+def test_joint_mode_format_batch(monkeypatch):
+    task = make_task(monkeypatch, action_key=JOINT_ACTION_KEY)
+    T, H = OBS_HORIZON, ACTION_HORIZON
+    joints = torch.tensor([0.1, -0.2, 0.3, -1.5, 0.2, 1.5, -0.1])
+    # observation.state = 7 joints + gripper width (the width is not used).
+    measured = torch.cat([joints, torch.tensor([0.04])]).expand(2, T, 8)
+    commands = torch.cat([joints, torch.tensor([1.0])]).expand(2, T + H, 8)
+    batch = {JOINT_STATE_KEY: measured, JOINT_ACTION_KEY: commands}
+    for cam in task.config.cameras:
+        batch[f"observation.images.{cam}"] = torch.rand(2, T, 3, 32, 32)
+
+    out = task.format_batch(batch)
+    expected = torch.cat([joints, torch.tensor([1.0])])
+    torch.testing.assert_close(
+        out[ObservationKey.state], task._normalize(expected).expand(2, T, 8)
+    )
+    np.testing.assert_allclose(
+        task.postprocess_action(out[ObservationKey.gt_actions][0, 0]),
+        expected.numpy(),
+        atol=1e-6,
+    )
+
+
+def test_joint_mode_clips_to_panda_limits_without_quaternion_handling(monkeypatch):
+    task = make_task(monkeypatch, action_key=JOINT_ACTION_KEY)
+    # A negative 5th value would be flipped if treated as a quaternion qx.
+    raw = torch.tensor([0.1, -0.2, 0.3, -1.5, -0.4, 1.5, -0.1, 0.5])
+    torch.testing.assert_close(task.make_state(raw[:7], raw[7:]), task._normalize(raw))
+    assert "quaternion" not in task.normalization_stats()["actions"]
+
+    # Out-of-range raw values hit the Panda joint limits.
+    monkeypatch.setattr(task, "_unnormalize", lambda x: torch.full((8,), 50.0))
+    np.testing.assert_allclose(
+        task.postprocess_action(torch.zeros(8)), JOINT_ACTION_HIGH
+    )
 
 
 def test_canonicalize_quat_flips_to_qx_nonnegative():
@@ -223,6 +286,7 @@ class FakeFrankaGymEnv(gym.Env):
         p = pose()
         return {
             "rgb_front": np.zeros((8, 8, 3), np.uint8),
+            "joint_pos": np.array([0.1, -0.2, 0.3, -1.5, 0.2, 1.5, -0.1], np.float32),
             "ee_pos": p[:3],
             "ee_quat": -p[3:7],  # measured quaternions may come flipped
         }
@@ -276,3 +340,12 @@ def test_observation_wrapper_rejects_mask_for_tasks_without_a_target():
     env = FrankaSimObservation(FakeFrankaGymEnv(None), mask_size=(8, 8))
     with pytest.raises(ValueError, match="no target mask"):
         env.reset()
+
+
+def test_joint_mode_eval_state_comes_from_joint_positions(monkeypatch):
+    env = FrankaSimObservation(FakeFrankaGymEnv(None))
+    obs, _ = env.reset()
+    task = make_task(monkeypatch, cameras=("front",), action_key=JOINT_ACTION_KEY)
+    state = task.preprocess_observation(obs)[ObservationKey.state]
+    raw = np.concatenate([obs["joint_pos"], [0.0]]).astype(np.float32)
+    torch.testing.assert_close(state[0, 0], task._normalize(torch.from_numpy(raw)))
